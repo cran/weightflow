@@ -1,0 +1,56 @@
+## ----setup, include = FALSE---------------------------------------------------
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(weightflow)
+has_survey <- requireNamespace("survey", quietly = TRUE)
+has_srvyr  <- requireNamespace("srvyr", quietly = TRUE) &&
+              requireNamespace("dplyr", quietly = TRUE)
+
+## ----recipe-------------------------------------------------------------------
+dat <- sample_one
+dat$age_grp <- cut(dat$age, c(0, 30, 45, 60, Inf),
+                   labels = c("18-30", "31-45", "46-60", "60+"))
+
+spec <- weighting_spec(dat, base_weights = pw) |>
+  step_unknown_eligibility(unknown = unknown_elig, by = "region") |>
+  step_drop_ineligible(ineligible = ineligible) |>
+  step_nonresponse(respondent = hh_responded, method = "weighting_class",
+                   by = "region") |>
+  step_select_within(prob = p_within) |>
+  step_nonresponse(respondent = responded, method = "weighting_class",
+                   by = c("region", "sex", "age_grp")) |>
+  step_calibrate(method = "raking",
+                 margins = list(region = c(table(population$region)),
+                                sex    = c(table(population$sex))))
+
+boot <- bootstrap_weights(spec, replicates = 200, strata = "region",
+                          psu = "psu", seed = 2024, progress = FALSE)
+boot
+
+## ----estimates----------------------------------------------------------------
+boot_mean(boot,  "income")     # mean income
+boot_total(boot, "employed")   # total employed
+boot_mean(boot,  "employed")   # employment rate
+
+## ----custom-------------------------------------------------------------------
+bootstrap_estimate(boot, function(w, d) {
+  ok <- !is.na(d$income) & w > 0
+  stats::median(rep(d$income[ok], times = round(w[ok])))   # weighted median (approx.)
+})
+
+## ----survey, eval = has_survey------------------------------------------------
+fitted <- prep(spec)
+des <- as_svydesign(fitted, ids = "psu", strata = "region")
+survey::svymean(~income, des, na.rm = TRUE)
+
+## ----svrep, eval = has_survey-------------------------------------------------
+rep_des <- as_svrepdesign(boot)
+survey::svymean(~income, rep_des, na.rm = TRUE)
+
+## ----srvyr, eval = has_srvyr--------------------------------------------------
+df <- collect_replicate_weights(boot)
+d_rep <- srvyr::as_survey_rep(df, weights = .weight,
+                              repweights = dplyr::starts_with("rep_"),
+                              type = "bootstrap", combined.weights = TRUE,
+                              scale = 1 / attr(df, "R"), rscales = 1, mse = TRUE)
+srvyr::summarise(d_rep, mean_income = srvyr::survey_mean(income, na.rm = TRUE))
+
