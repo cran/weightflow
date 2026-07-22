@@ -342,8 +342,15 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 <p>weightflow computes weights and also estimates their variances. This
-vignette shows two ways to obtain standard errors from a weightflow
-recipe, and how they relate.</p>
+vignette shows a few ways to obtain standard errors from a weightflow
+recipe, and how they relate: a recipe-aware bootstrap, a survey-package
+linearization, and a recipe-aware jackknife.</p>
+<p>Throughout, <span class="math inline">\(U\)</span> is the population
+and <span class="math inline">\(s\)</span> the sample; <span class="math inline">\(w_i\)</span> is the final weight of unit <span class="math inline">\(i\)</span>; and a population total is written
+<span class="math inline">\(Y = \sum_{i \in U} y_i\)</span>, estimated
+by <span class="math inline">\(\hat Y = \sum_{i \in s}
+w_i\,y_i\)</span>. The sample is drawn in clusters: primary sampling
+units (PSUs) nested in strata.</p>
 <div id="why-the-adjustments-matter-for-variance" class="section level2">
 <h2>Why the adjustments matter for variance</h2>
 <p>A weighting recipe rarely stops at the design weight. It
@@ -369,54 +376,71 @@ replicate.</p>
 <span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>                   <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">&quot;18-30&quot;</span>, <span class="st">&quot;31-45&quot;</span>, <span class="st">&quot;46-60&quot;</span>, <span class="st">&quot;60+&quot;</span>))</span>
 <span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
 <span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>spec <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(dat, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(<span class="at">ineligible =</span> ineligible) <span class="sc">|&gt;</span></span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> hh_responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>  <span class="fu">step_select_within</span>(<span class="at">prob =</span> p_within) <span class="sc">|&gt;</span></span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
-<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex))))</span>
-<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a></span>
-<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>boot <span class="ot">&lt;-</span> <span class="fu">bootstrap_weights</span>(spec, <span class="at">replicates =</span> <span class="dv">200</span>, <span class="at">strata =</span> <span class="st">&quot;region&quot;</span>,</span>
-<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>                          <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">seed =</span> <span class="dv">2024</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>boot</span>
-<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow bootstrap&gt;</span></span>
-<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a><span class="co">#&gt;   replicates : 200</span></span>
-<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a><span class="co">#&gt;   units      : 417 (active: 209)</span></span>
-<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a><span class="co">#&gt;   strata     : region</span></span>
-<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a><span class="co">#&gt;   psu        : psu</span></span></code></pre></div>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>                           <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(<span class="at">ineligible =</span> ineligible) <span class="sc">|&gt;</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> hh_responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>  <span class="fu">step_select_within</span>(<span class="at">prob =</span> p_within) <span class="sc">|&gt;</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex))))</span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>boot <span class="ot">&lt;-</span> <span class="fu">bootstrap_weights</span>(spec, <span class="at">replicates =</span> <span class="dv">200</span>, <span class="at">strata =</span> <span class="st">&quot;region&quot;</span>,</span>
+<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>                          <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">seed =</span> <span class="dv">2024</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>boot</span>
+<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow bootstrap&gt;</span></span>
+<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a><span class="co">#&gt;   replicates : 200</span></span>
+<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a><span class="co">#&gt;   units      : 417 (active: 209)</span></span>
+<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a><span class="co">#&gt;   strata     : region</span></span>
+<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a><span class="co">#&gt;   psu        : psu</span></span></code></pre></div>
 <p>The multiplier is the <strong>Rao-Wu rescaling bootstrap</strong>.
-Within a stratum with <code>n</code> PSUs, <code>m</code> PSUs are drawn
-with replacement (by default <code>m = n - 1</code>), and a unit whose
-PSU was drawn <code>t</code> times is rescaled by</p>
-<pre><code>lambda = 1 - sqrt(m / (n - 1)) + sqrt(m / (n - 1)) * (n / m) * t</code></pre>
-<p>which has expectation one and never turns negative. Whole PSUs are
-kept together (every unit in a drawn PSU is retained), as the design’s
-clustering requires.</p>
+Consider a stratum <span class="math inline">\(h\)</span> with <span class="math inline">\(n_h\)</span> PSUs, from which <span class="math inline">\(m_h\)</span> are drawn with replacement (by
+default <span class="math inline">\(m_h = n_h -
+1\)</span>). Let <span class="math inline">\(t_{hi}^{*}\)</span> be the
+number of times PSU <span class="math inline">\(i\)</span> is selected
+in a replicate. Every unit in that PSU has its weight rescaled by</p>
+<p><span class="math display">\[\lambda_{hi} = 1 - \sqrt{\tfrac{m_h}{n_h
+- 1}}
+  + \sqrt{\tfrac{m_h}{n_h -
+1}}\;\frac{n_h}{m_h}\,t_{hi}^{*},\]</span></p>
+<p>so the replicate weight is <span class="math inline">\(w_i^{*} =
+\lambda_{hi}\,w_i\)</span>. The factor has expectation one over the
+resampling, <span class="math inline">\(\mathbb{E}(\lambda_{hi}) =
+1\)</span>, which keeps each replicate design-unbiased, and the
+construction never turns it negative, so the recipe can be re-prepped on
+every replicate without invalid weights. Whole PSUs are kept together
+(every unit in a drawn PSU is retained), as the design’s clustering
+requires.</p>
 <div id="estimates-with-bootstrap-standard-errors" class="section level3">
 <h3>Estimates with bootstrap standard errors</h3>
-<p>The bootstrap variance is
-<code>(1 / B) * sum((theta_b - theta_hat)^2)</code>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;income&quot;</span>)     <span class="co"># mean income</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; 1 21615.21 872.7788 19904.59 23325.82</span></span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="fu">boot_total</span>(boot, <span class="st">&quot;employed&quot;</span>)   <span class="co"># total employed</span></span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1 1927.219 140.9421 1650.978 2203.461</span></span>
-<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;employed&quot;</span>)   <span class="co"># employment rate</span></span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt;    estimate         se  ci_lower  ci_upper</span></span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; 1 0.4287473 0.03102821 0.3679331 0.4895615</span></span></code></pre></div>
+<p>Writing <span class="math inline">\(\hat\theta\)</span> for the point
+estimate and <span class="math inline">\(\hat\theta_b\)</span> for its
+value on replicate <span class="math inline">\(b\)</span> (each computed
+from the re-prepped replicate weights), the bootstrap variance is the
+average squared deviation across the <span class="math inline">\(B\)</span> replicates,</p>
+<p><span class="math display">\[\widehat{\operatorname{Var}}(\hat\theta)
+  = \frac{1}{B} \sum_{b=1}^{B} \big(\hat\theta_b - \hat\theta\big)^2
+.\]</span></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;income&quot;</span>)     <span class="co"># mean income</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; 1 21615.21 872.7788 19904.59 23325.82</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="fu">boot_total</span>(boot, <span class="st">&quot;employed&quot;</span>)   <span class="co"># total employed</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; 1 1927.219 140.9421 1650.978 2203.461</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;employed&quot;</span>)   <span class="co"># employment rate</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;    estimate         se  ci_lower  ci_upper</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; 1 0.4287473 0.03102821 0.3679331 0.4895615</span></span></code></pre></div>
 <p>For any other statistic, pass a function of the weights and the data
 to <code>bootstrap_estimate()</code>:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">bootstrap_estimate</span>(boot, <span class="cf">function</span>(w, d) {</span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  ok <span class="ot">&lt;-</span> <span class="sc">!</span><span class="fu">is.na</span>(d<span class="sc">$</span>income) <span class="sc">&amp;</span> w <span class="sc">&gt;</span> <span class="dv">0</span></span>
-<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  stats<span class="sc">::</span><span class="fu">median</span>(<span class="fu">rep</span>(d<span class="sc">$</span>income[ok], <span class="at">times =</span> <span class="fu">round</span>(w[ok])))   <span class="co"># weighted median (approx.)</span></span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>})</span>
-<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;   estimate     se ci_lower ci_upper</span></span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; 1    18136 930.15 16312.94 19959.06</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">bootstrap_estimate</span>(boot, <span class="cf">function</span>(w, d) {</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  ok <span class="ot">&lt;-</span> <span class="sc">!</span><span class="fu">is.na</span>(d<span class="sc">$</span>income) <span class="sc">&amp;</span> w <span class="sc">&gt;</span> <span class="dv">0</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  stats<span class="sc">::</span><span class="fu">median</span>(<span class="fu">rep</span>(d<span class="sc">$</span>income[ok], <span class="at">times =</span> <span class="fu">round</span>(w[ok])))   <span class="co"># weighted median (approx.)</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>})</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   estimate     se ci_lower ci_upper</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1    18136 930.15 16312.94 19959.06</span></span></code></pre></div>
 </div>
 </div>
 <div id="method-2-hand-the-weights-to-the-survey-package" class="section level2">
@@ -424,17 +448,17 @@ to <code>bootstrap_estimate()</code>:</p>
 <p><code>as_svydesign()</code> builds an ultimate-cluster linearization
 design from a prepped recipe. It is fast, but treats the calibration as
 fixed.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>fitted <span class="ot">&lt;-</span> <span class="fu">prep</span>(spec)</span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>des <span class="ot">&lt;-</span> <span class="fu">as_svydesign</span>(fitted, <span class="at">ids =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">strata =</span> <span class="st">&quot;region&quot;</span>)</span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>survey<span class="sc">::</span><span class="fu">svymean</span>(<span class="sc">~</span>income, des, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt;         mean     SE</span></span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; income 21615 989.34</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>fitted <span class="ot">&lt;-</span> <span class="fu">prep</span>(spec)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>des <span class="ot">&lt;-</span> <span class="fu">as_svydesign</span>(fitted, <span class="at">ids =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">strata =</span> <span class="st">&quot;region&quot;</span>)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>survey<span class="sc">::</span><span class="fu">svymean</span>(<span class="sc">~</span>income, des, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;         mean     SE</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; income 21615 989.34</span></span></code></pre></div>
 <p>To keep the recipe’s adjustments in the variance while still using
 survey, feed it the bootstrap replicate weights from method 1:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>rep_des <span class="ot">&lt;-</span> <span class="fu">as_svrepdesign</span>(boot)</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>survey<span class="sc">::</span><span class="fu">svymean</span>(<span class="sc">~</span>income, rep_des, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="co">#&gt;         mean     SE</span></span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; income 21615 872.78</span></span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>rep_des <span class="ot">&lt;-</span> <span class="fu">as_svrepdesign</span>(boot)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>survey<span class="sc">::</span><span class="fu">svymean</span>(<span class="sc">~</span>income, rep_des, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;         mean     SE</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; income 21615 872.78</span></span></code></pre></div>
 <p>This matches <code>boot_mean(boot, &quot;income&quot;)</code> exactly, because
 <code>as_svrepdesign()</code> sets <code>scale = 1 / B</code>,
 <code>rscales = 1</code> and <code>mse = TRUE</code>.</p>
@@ -444,16 +468,45 @@ survey, feed it the bootstrap replicate weights from method 1:</p>
 <p><code>collect_replicate_weights()</code> attaches the point weight
 (<code>.weight</code>) and the replicate weights (<code>rep_1</code> …
 <code>rep_B</code>) to the active respondents, ready for srvyr.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">collect_replicate_weights</span>(boot)</span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>d_rep <span class="ot">&lt;-</span> srvyr<span class="sc">::</span><span class="fu">as_survey_rep</span>(df, <span class="at">weights =</span> .weight,</span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                              <span class="at">repweights =</span> dplyr<span class="sc">::</span><span class="fu">starts_with</span>(<span class="st">&quot;rep_&quot;</span>),</span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>                              <span class="at">type =</span> <span class="st">&quot;bootstrap&quot;</span>, <span class="at">combined.weights =</span> <span class="cn">TRUE</span>,</span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>                              <span class="at">scale =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">attr</span>(df, <span class="st">&quot;R&quot;</span>), <span class="at">rscales =</span> <span class="dv">1</span>, <span class="at">mse =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>srvyr<span class="sc">::</span><span class="fu">summarise</span>(d_rep, <span class="at">mean_income =</span> srvyr<span class="sc">::</span><span class="fu">survey_mean</span>(income, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 2</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   mean_income mean_income_se</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;         &lt;dbl&gt;          &lt;dbl&gt;</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; 1      21615.           873.</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">collect_replicate_weights</span>(boot)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>d_rep <span class="ot">&lt;-</span> srvyr<span class="sc">::</span><span class="fu">as_survey_rep</span>(df, <span class="at">weights =</span> .weight,</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>                              <span class="at">repweights =</span> dplyr<span class="sc">::</span><span class="fu">starts_with</span>(<span class="st">&quot;rep_&quot;</span>),</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>                              <span class="at">type =</span> <span class="st">&quot;bootstrap&quot;</span>, <span class="at">combined.weights =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>                              <span class="at">scale =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">attr</span>(df, <span class="st">&quot;R&quot;</span>), <span class="at">rscales =</span> <span class="dv">1</span>, <span class="at">mse =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>srvyr<span class="sc">::</span><span class="fu">summarise</span>(d_rep, <span class="at">mean_income =</span> srvyr<span class="sc">::</span><span class="fu">survey_mean</span>(income, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 2</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   mean_income mean_income_se</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;         &lt;dbl&gt;          &lt;dbl&gt;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; 1      21615.           873.</span></span></code></pre></div>
+</div>
+<div id="method-3-a-delete-a-psu-jackknife-that-re-applies-the-recipe" class="section level2">
+<h2>Method 3: a delete-a-PSU jackknife that re-applies the recipe</h2>
+<p>The jackknife is the natural sibling of the bootstrap: instead of
+resampling PSUs, it <strong>deletes one PSU at a time</strong> and
+re-runs the whole recipe, so the replicate weights again carry the
+variability of every stage. <code>jackknife_weights()</code> builds the
+stratified delete-a-PSU jackknife (JKn) with
+<code>strata</code>/<code>psu</code>; the unstratified JK1 follows from
+<code>strata = NULL</code>.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>jk <span class="ot">&lt;-</span> <span class="fu">jackknife_weights</span>(spec, <span class="at">strata =</span> <span class="st">&quot;region&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>jk</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow jackknife&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt;   replicates : 48 (delete-a-PSU)</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt;   units      : 417 (active: 209)</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;   strata     : region</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt;   psu        : psu</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="fu">jack_mean</span>(jk,  <span class="st">&quot;income&quot;</span>)     <span class="co"># mean income, with the JKn variance</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; 1 21615.21 939.1042  19774.6 23455.82</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="fu">jack_total</span>(jk, <span class="st">&quot;employed&quot;</span>)   <span class="co"># total employed</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; 1 1927.219 155.2414 1622.952 2231.487</span></span></code></pre></div>
+<p>For a total it matches <code>survey</code>’s replicate jackknife
+exactly. As with the bootstrap, the replicate weights bridge to
+survey/srvyr through <code>as_svrepdesign(jk)</code>, so any estimand or
+domain can be estimated downstream with the recipe’s uncertainty built
+in.</p>
 </div>
 <div id="which-one-to-use" class="section level2">
 <h2>Which one to use</h2>
@@ -462,8 +515,11 @@ its three forms) when the nonresponse and calibration steps are a
 meaningful part of the design and you want their uncertainty reflected;
 it is the more honest variance. Use the <strong>linearization</strong>
 (method 2) for a quick, well-understood standard error when the
-adjustments are minor or you only need the design-and-clustering
-part.</p>
+adjustments are minor or you only need the design-and-clustering part.
+The <strong>jackknife</strong> (method 3) is the recipe-aware
+alternative to the bootstrap when a deterministic, replicate-based
+variance is preferred; it matches <code>survey</code>’s replicate
+jackknife for totals.</p>
 <p>A few practical notes. More replicates give a more stable bootstrap
 SE; 200 is fine for exploration, 500-1000 for final figures. Each
 stratum needs at least two PSUs to be resampled (single-PSU strata are

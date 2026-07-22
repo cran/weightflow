@@ -17,7 +17,7 @@ report_weighting(object, file = NULL, open = TRUE, plots = TRUE)
 adjustment-factor histogram). Uses ggplot2 if installed, else base graphics.}
 }
 \value{
-(invisibly) the path to the written HTML file.
+(invisibly) the path to the HTML file.
 }
 \description{
 Writes a self-contained HTML file (no dependencies, no server) showing the
@@ -29,6 +29,9 @@ in the browser.
 fitted <- weighting_spec(sample_survey, base_weights = pw) |>
   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
   prep()
-f <- tempfile(fileext = ".html")
-report_weighting(fitted, file = f, open = FALSE)
+\donttest{
+# writes a self-contained HTML report to a temporary file (open = FALSE so
+# nothing is launched); use open = TRUE to view it in the browser.
+path <- report_weighting(fitted, open = FALSE)
+}
 }

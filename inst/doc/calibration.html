@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Calibration: raking, post-stratification and GREG</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Calibration: raking, post-stratification
+and GREG</h1>
+
+
+
+<p>Calibration adjusts the weights so that the weighted sample
+reproduces known population totals of auxiliary variables. It is usually
+the last stage of the recipe, applied to weights that already reflect
+eligibility, selection and nonresponse. <code>step_calibrate()</code>
+provides raking, post-stratification and linear (GREG) calibration, with
+optional bounds and an equal-weights-within-cluster variant.</p>
+<p>Throughout, <span class="math inline">\(w_i\)</span> is the weight
+entering the step (the design weight, or the weight coming from the
+previous adjustment for eligibility, selection or nonresponse), <span class="math inline">\(w_i^{\mathrm{cal}}\)</span> is the calibrated
+weight, <span class="math inline">\(\mathbf{x}_i\)</span> is the vector
+of calibration auxiliaries for unit <span class="math inline">\(i\)</span>, and <span class="math inline">\(\mathbf{X} = \sum_{i \in
+U} \mathbf{x}_i\)</span> are their known population totals.</p>
+<div id="what-calibration-does" class="section level2">
+<h2>What calibration does</h2>
+<p>A calibrated weight system satisfies the calibration equation,
+i.e. the weighted sample totals of the auxiliaries match the population
+totals,</p>
+<p><span class="math display">\[\sum_{i \in s}
+w_i^{\mathrm{cal}}\,\mathbf{x}_i = \mathbf{X} .\]</span></p>
+<p>The calibrated weight is the incoming weight times an adjustment
+factor, <span class="math inline">\(w_i^{\mathrm{cal}} =
+g_i\,w_i\)</span>, where <span class="math inline">\(g_i\)</span> is the
+calibration factor (the g-weight). Many weight systems satisfy the
+calibration equation, so calibration picks the one whose factors <span class="math inline">\(g_i\)</span> keep <span class="math inline">\(w_i^{\mathrm{cal}}\)</span>
+<strong>closest</strong> to the incoming weights <span class="math inline">\(w_i\)</span>. Several distance measures exist
+(they differ in how they penalize moving a weight), but they share the
+same idea: change the previous weights as little as possible. The reason
+is that the incoming weights already carry good properties (for
+instance, if they are Horvitz-Thompson design weights, the estimator is
+design-unbiased); keeping the calibrated weights near them preserves
+those properties, so the calibration estimator is approximately
+(asymptotically) unbiased, while gaining the consistency with the
+population totals.</p>
+<p>Calibration auxiliaries are chosen with two goals in mind. First,
+<strong>precision</strong>: variables correlated with the survey
+outcomes reduce the standard errors (more on why below). Second,
+<strong>bias reduction</strong>: aligning the weights to population
+totals corrects residual imbalances left after the nonresponse
+adjustment (for example a group that ended up under- or
+over-represented), provided the totals are known without error.</p>
+</div>
+<div id="why-calibration-reduces-variance-the-regression-link" class="section level2">
+<h2>Why calibration reduces variance: the regression link</h2>
+<p>Calibration is tied to a regression model for the outcome, which is
+the clearest way to see why it helps. The calibration estimator can be
+written in generalized-regression (GREG) form,</p>
+<p><span class="math display">\[\hat Y = \sum_{i \in U} \hat y_i +
+\sum_{i \in s} w_i\,(y_i - \hat y_i),
+\qquad \hat y_i = \mathbf{x}_i^\top \hat{\boldsymbol\beta},\]</span></p>
+<p>a population total of fitted values plus a weighted sum of the sample
+residuals <span class="math inline">\(e_i = y_i - \hat y_i\)</span>. The
+variance of this estimator depends on the residuals <span class="math inline">\(e_i\)</span>, not on <span class="math inline">\(y_i\)</span> itself. So when the auxiliaries
+predict the outcome well, the residuals are small and the variance
+drops. This is the intuition behind calibrating on variables related to
+the outcomes: you are implicitly fitting a model for <span class="math inline">\(y\)</span>, and you only pay (in variance) for
+what the model fails to explain.</p>
+</div>
+<div id="post-stratification" class="section level2">
+<h2>Post-stratification</h2>
+<p>Post-stratification uses the <strong>full
+cross-classification</strong> of the auxiliaries into groups
+(post-strata): the population count <span class="math inline">\(N_g\)</span> of every group <span class="math inline">\(g\)</span> must be known. Within each group the
+factor is the same for all units,</p>
+<p><span class="math display">\[g_i = \frac{N_g}{\hat N_g}, \qquad \hat
+N_g = \sum_{i \in g \cap s} w_i,\]</span></p>
+<p>the known population count over the weighted sample count. It is a
+saturated model (one factor per group) and reproduces every group total
+exactly.</p>
+<p>With a single post-stratifying variable, the groups are its
+categories, and <code>poststratify</code> takes that one variable:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;poststratify&quot;</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)))) <span class="sc">|&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt;   variable category target prev_total    factor</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570  1487.5000 1.0554622</span></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250  1210.0000 1.0330579</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927   800.0000 1.1587500</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748   873.3333 0.8564885</span></span></code></pre></div>
+<p>The <code>poststratify</code> method works on exactly one categorical
+variable. To post-stratify on <strong>several</strong> variables the
+post-strata are their <strong>interaction</strong> (every combination of
+categories), and there are two ways to obtain it. One is to create a
+single variable in the sample that holds the interaction (e.g.
+<code>interaction(region, sex)</code>) and post-stratify on it,
+supplying the population counts of every combination. The other, more
+convenient, is linear calibration with an interaction formula
+<code>~ region * sex</code>, whose design matrix has one column per
+cell, so it reproduces the full cross-table and, unlike the shortcut,
+also accepts bounds:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>totals_cross <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">*</span> sex, population))</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>wf2 <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">*</span> sex,</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>                 <span class="at">totals =</span> totals_cross) <span class="sc">|&gt;</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>wf2<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt;                          variable target achieved</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; (Intercept)           (Intercept)   4495     4495</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; regionSouth           regionSouth   1250     1250</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; regionEast             regionEast    927      927</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt; regionWest             regionWest    748      748</span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; sexM                         sexM   2184     2184</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; regionSouth:sexM regionSouth:sexM    607      607</span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt; regionEast:sexM   regionEast:sexM    460      460</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt; regionWest:sexM   regionWest:sexM    372      372</span></span></code></pre></div>
+<p>Creating more cells than the sample can support has a cost: cells may
+come out empty in the sample (no respondents to carry the weight), and
+small sample cells produce large factors <span class="math inline">\(g =
+N_g / \hat N_g\)</span> when <span class="math inline">\(\hat
+N_g\)</span> is built from very few units. Both make the weights
+unstable, which is the practical limit on how finely you can
+post-stratify.</p>
+<p>There is a regression model behind it. Post-stratification is a GREG
+whose predictor is the post-stratum indicator, so the fitted value <span class="math inline">\(\hat y_i\)</span> is the estimated post-stratum
+mean and the residual is <span class="math inline">\(e_i = y_i - \bar
+y_g\)</span>, the deviation of <span class="math inline">\(y_i\)</span>
+from its post-stratum mean. As in the GREG form above, the variance
+depends on these residuals: the more homogeneous the outcome within
+post-strata, the smaller the residuals and the larger the precision
+gain.</p>
+</div>
+<div id="raking" class="section level2">
+<h2>Raking</h2>
+<p>Raking (iterative proportional fitting) needs only the marginal
+totals of each variable, not the full cross-table. It cycles through the
+margins, post-stratifying to one at a time, until all marginal totals
+are met simultaneously.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;   variable category target achieved</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570     1570</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250     1250</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927      927</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748      748</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; 5      sex        F   2311     2311</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; 6      sex        M   2184     2184</span></span></code></pre></div>
+<p>Raking fits an implicit log-linear model with main effects only: it
+matches each margin but says nothing about the interactions. As a result
+it does not reproduce the counts of the cross-classification (e.g. the
+region-by-sex cell totals): those are left at whatever the sample
+implies, not forced to a known value. That is exactly why raking is the
+method of choice when you want to include many auxiliaries (each thought
+to be a good predictor of response and of the outcomes) without
+inflating the weights: by constraining only the margins, it avoids the
+small, unstable cells of a full cross-table and keeps the weights closer
+to the incoming ones. A further practical property is that raking
+factors <span class="math inline">\(g_i\)</span> are always positive
+(they can be large, but never negative), so the calibrated weights never
+change sign.</p>
+</div>
+<div id="linear-calibration-greg" class="section level2">
+<h2>Linear calibration (GREG)</h2>
+<p>Linear calibration matches the totals of a design matrix, and is the
+natural choice with continuous auxiliaries or when a linear relationship
+with the outcome is plausible. It is the calibration form that
+corresponds most directly to the GREG estimator above. As seen in the
+post-stratification section, a saturated interaction formula
+(<code>~ region * sex</code>) makes linear calibration reproduce a full
+cross-table, and unlike the <code>poststratify</code> shortcut it then
+accepts bounds.</p>
+<p>What sets linear calibration apart from post-stratification and
+raking is that its auxiliaries need not be categorical. Those two
+methods work on group membership (cells or margins), whereas linear
+calibration can match the total of a quantitative variable, e.g. the
+population total of <code>age</code>, alongside the categorical ones.
+The formula below calibrates on region, sex and mean age at once:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>totals <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">+</span> sex <span class="sc">+</span> age, population))</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex <span class="sc">+</span> age,</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>                 <span class="at">totals =</span> totals) <span class="sc">|&gt;</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;                variable target achieved</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt; (Intercept) (Intercept)   4495     4495</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; regionSouth regionSouth   1250     1250</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; regionEast   regionEast    927      927</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; regionWest   regionWest    748      748</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; sexM               sexM   2184     2184</span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt; age                 age 190781   190781</span></span></code></pre></div>
+<p>The <code>age</code> row is calibrated to the known population total
+of age, something neither post-stratification nor raking can do
+directly: they would first have to bin age into categories, losing
+information. Continuous auxiliaries are where the regression view of
+calibration is most natural.</p>
+<p>Unlike raking, linear calibration can produce negative factors <span class="math inline">\(g_i\)</span> (and so negative weights). This is
+most likely when the incoming weights <span class="math inline">\(w_i\)</span> are very small, or when the
+calibration equation includes more variables than the sample can support
+(for example many auxiliaries with interactions omitted): the system is
+then close to over-parameterized and some factors overshoot below zero.
+Negative weights are awkward to use and report, which motivates the next
+two options.</p>
+</div>
+<div id="bounded-calibration" class="section level2">
+<h2>Bounded calibration</h2>
+<p>Bounding the calibration factor <span class="math inline">\(g_i =
+w_i^{\mathrm{cal}} / w_i\)</span> keeps the adjustment within a range
+and rules out the negative or extreme weights that unbounded linear
+calibration can produce (the logit distance of Deville and Sarndal
+enforces the bounds smoothly), trading a little exactness for safer
+weights.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>totals_rs <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, population))</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex, <span class="at">totals =</span> totals_rs,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>                 <span class="at">bounds =</span> <span class="fu">c</span>(<span class="fl">0.83</span>, <span class="fl">1.2</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="fu">range</span>(wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics<span class="sc">$</span>achieved <span class="sc">/</span> wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics<span class="sc">$</span>target)</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; [1] 1 1</span></span></code></pre></div>
+<p>Bounds cap the factors but still solve the calibration exactly within
+those limits. When the real problem is too many auxiliaries for the
+sample (an over-parameterized calibration equation), a better remedy is
+to <strong>relax</strong> the targets rather than bound the factor:
+ridge (penalized) calibration, and more generally penalized or
+lasso-type calibration, shrink the solution and avoid the instability
+that produces extreme or negative weights. The ridge option is covered
+in the <em>Machine learning, cross-fitting and robust calibration</em>
+article.</p>
+</div>
+<div id="equal-weights-within-a-cluster" class="section level2">
+<h2>Equal weights within a cluster</h2>
+<p>In household surveys it is often desirable that every member of a
+household carry the <strong>same</strong> final weight (so that person
+and household estimates stay coherent). With
+<code>equal_within_cluster = TRUE</code>, linear calibration finds a
+single weight per cluster that still meets the population totals.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>totals_rs <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, population))</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex, <span class="at">totals =</span> totals_rs,</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>                 <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>, <span class="at">equal_within_cluster =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co"># every member of a household shares one weight</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="fu">tapply</span>(wf<span class="sc">$</span>final_weight, sample_survey<span class="sc">$</span>household_id, <span class="cf">function</span>(x) <span class="fu">diff</span>(<span class="fu">range</span>(x))) <span class="sc">|&gt;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  <span class="fu">max</span>()</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt; [1] 21.71654</span></span></code></pre></div>
+<p>The maximum within-household spread is zero: the weight is constant
+inside each household, while the region and sex totals are still
+reproduced.</p>
+<p>The integrative option is not tied to the default distance: it
+composes with any <code>calfun</code> (<code>&quot;linear&quot;</code>,
+<code>&quot;raking&quot;</code> or <code>&quot;logit&quot;</code>), with
+<code>bounds</code>, and with <code>by</code> (domain calibration), all
+applied while keeping one weight per cluster. For example,
+<code>calfun = &quot;raking&quot;</code> gives a single positive weight per
+household.</p>
+</div>
+<div id="which-to-use" class="section level2">
+<h2>Which to use</h2>
+<p>Post-stratification when the full cross-table is known and the cells
+are large enough. Raking when only margins are available, or when you
+want many auxiliaries without unstable cells. Linear (GREG) for
+continuous auxiliaries or an explicit linear model. Add bounds (or
+ridge, in the advanced article) when the weights risk becoming extreme,
+and <code>equal_within_cluster</code> when household members must share
+a weight. When a working model for the outcome is available and the
+auxiliaries are known at the unit level for the whole population, the
+model-calibration approach (see the <em>Model calibration</em> article)
+can be more efficient still.</p>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<ul>
+<li>Deville, J.-C., &amp; Sarndal, C.-E. (1992). Calibration estimators
+in survey sampling. <em>JASA</em>, 87(418), 376–382.</li>
+<li>Deville, J.-C., Sarndal, C.-E., &amp; Sautory, O. (1993).
+Generalized raking procedures in survey sampling. <em>JASA</em>,
+88(423), 1013–1020.</li>
+<li>Deming, W. E., &amp; Stephan, F. F. (1940). On a least squares
+adjustment of a sampled frequency table. <em>Annals of Mathematical
+Statistics</em>, 11(4), 427–444.</li>
+<li>Sarndal, C.-E. (2007). The calibration approach in survey theory and
+practice. <em>Survey Methodology</em>, 33(2), 99–119.</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

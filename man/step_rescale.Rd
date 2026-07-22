@@ -18,7 +18,8 @@ or "total" (weights sum to \code{total}).}
 each group sums to its own active count.}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
 Rescale (normalize) the weights

@@ -1,6 +1,6 @@
 Package: weightflow
 Title: Declarative API for Staged Survey Weights
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person("Juan Pablo", "Ferreira", email = "juanpablo.ferreira@fcea.edu.uy", role = c("aut", "cre"))
 Description: Builds survey weights from design base weights by chaining
     hierarchical adjustments (unknown eligibility, nonresponse and calibration)
@@ -16,8 +16,9 @@ Encoding: UTF-8
 Language: en-US
 Depends: R (>= 4.1.0)
 Imports: stats, utils, graphics
-Suggests: rpart, ranger, testthat (>= 3.0.0), survey, srvyr, dplyr,
-        knitr, rmarkdown, spelling
+Suggests: MASS, rpart, ranger, testthat (>= 3.0.0), survey, srvyr,
+        dplyr, tidyr, ggplot2, haven, archive, knitr, rmarkdown,
+        spelling, xgboost
 Config/roxygen2/version: 8.0.0
 URL: https://github.com/jpferreira33/weightflow,
         https://jpferreira33.github.io/weightflow/
@@ -26,8 +27,8 @@ Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-06-24 12:07:46 UTC; jp
+Packaged: 2026-07-22 16:27:34 UTC; jp
 Author: Juan Pablo Ferreira [aut, cre]
 Maintainer: Juan Pablo Ferreira <juanpablo.ferreira@fcea.edu.uy>
 Repository: CRAN
-Date/Publication: 2026-06-30 11:30:02 UTC
+Date/Publication: 2026-07-22 17:10:02 UTC

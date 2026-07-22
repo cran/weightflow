@@ -10,56 +10,102 @@ step_calibrate(
   method = c("raking", "poststratify", "linear"),
   formula = NULL,
   totals = NULL,
+  count = NULL,
+  by = NULL,
   cluster = NULL,
   equal_within_cluster = FALSE,
-  calfun = c("linear", "logit"),
+  calfun = c("linear", "logit", "raking"),
   bounds = NULL,
   maxit = 50L,
-  tol = 1e-06
+  tol = 1e-06,
+  penalty = NULL
 )
 }
 \arguments{
 \item{spec}{a weighting_spec.}
 
-\item{margins}{named list (for "raking"/"poststratify"). Each element is a
-named numeric vector with the target totals per category. E.g.:
-list(sex = c(M = 5000, F = 5200), region = c(N = 3000, S = 7200)).}
+\item{margins}{named list (classic format for "raking"/"poststratify"). Each
+element is a named numeric vector with the target totals per category. E.g.:
+list(sex = c(M = 5000, F = 5200), region = c(N = 3000, S = 7200)). Still
+fully supported; for a tidy alternative see \code{totals} and \code{count}.}
 
-\item{method}{"raking" (IPF, categorical margins), "poststratify" (a single
-categorical variable) or "linear" (GREG / regression estimator; handles
-continuous and categorical auxiliaries together).}
+\item{method}{"raking" (IPF, categorical margins), "poststratify"
+(post-strata: one or more categorical variables crossed) or "linear"
+(GREG / regression estimator; handles continuous and categorical
+auxiliaries together).}
 
-\item{formula}{(only "linear") auxiliary formula, e.g. ~ sex + income.
+\item{formula}{(only method = "linear") auxiliary formula, e.g. ~ sex + income.
 Uses model.matrix; includes the intercept unless you write ~ 0 + ...}
 
-\item{totals}{(only "linear") named numeric vector with the population
-totals, names matching the model.matrix columns (including "(Intercept)" =
-N if there is an intercept). If names do not match, the error lists the
-expected ones.}
+\item{totals}{population totals, in one of two forms. Classic (all methods):
+for "linear" a named numeric vector aligned with the model.matrix columns
+(including "(Intercept)" = N); for "raking"/"poststratify" use \code{margins}.
+Tidy (recommended): a data frame or a named list of data frames/numbers
+giving the totals in a friendly way, paired with \code{count}. For
+"poststratify", a single data frame with one or more category columns plus
+a counts column. For "raking", a list of data frames, one per margin. For
+"linear", a named list whose names match the formula terms: a data frame
+with all categories for each factor, and a single number for each
+continuous auxiliary; weightflow builds the model.matrix totals internally
+(you never handle the intercept or dropped reference category).}
 
-\item{cluster}{(only "linear") name of the cluster id column (e.g. "household"),
-for equal weights within the cluster.}
+\item{count}{(tidy \code{totals} only) string naming the counts column in the
+totals data frame(s). All other columns are treated as category variables.}
 
-\item{equal_within_cluster}{(only "linear") logical. If TRUE, Lemaitre-Dufour
-(1987) integrative calibration: a single weight per cluster. Requires
-\code{cluster}. Final weights are equal within the cluster provided the incoming
-weight is also uniform within the cluster.}
+\item{by}{(tidy \code{totals} only) NULL, or a string naming a domain (partition)
+column. When given, the weights are calibrated \strong{independently within each
+domain}, each to its own totals (partitioned / domain calibration). The
+totals tables carry the domain as a column, and each \code{count} table is split
+by it; a continuous total becomes a data frame \verb{domain, value} (one total per
+domain). The domain variable must NOT appear in \code{formula} / the margins: it
+is the partition. Composes with \code{calfun}, \code{bounds}, \code{penalty} and
+\code{equal_within_cluster}, applied within each domain. NULL (default) calibrates
+globally, as before.}
 
-\item{calfun}{(only "linear") distance function: "linear" (g = 1 + u) or
-"logit" (bounded by construction). With "logit", \code{bounds} is required.}
+\item{cluster}{(only method = "linear") name of the cluster id column
+(e.g. "household"), for equal weights within the cluster.}
 
-\item{bounds}{(only "linear") numeric c(L, U) with L < 1 < U. Bounds on the
+\item{equal_within_cluster}{(only method = "linear") logical. If TRUE,
+Lemaitre-Dufour (1987) integrative calibration: a single weight per cluster.
+Requires \code{cluster}. Final weights are equal within the cluster provided the
+incoming weight is also uniform within the cluster. Works with any \code{calfun}
+distance ("linear", "raking" or "logit"), with \code{bounds} and with \code{by}.}
+
+\item{calfun}{(only method = "linear") distance function for the calibration
+factor g: "linear" (g = 1 + u, closed form), "raking" (g = exp(u), the
+exponential/multiplicative distance, which keeps the weights positive and
+still satisfies the constraints exactly) or "logit" (bounded by
+construction; requires \code{bounds}). "raking" and "logit" use the iterative
+Deville-Sarndal solver and work with the integrative option
+(\code{equal_within_cluster}) too.}
+
+\item{bounds}{(only method = "linear") numeric c(L, U) with L < 1 < U. Bounds on the
 calibration factor g (g-weights). With "linear" it truncates; with "logit"
 it is enforced smoothly. Avoids extreme/negative weights without a separate
 trimming step.}
 
 \item{maxit, tol}{convergence control for raking and bounded calibration.}
+
+\item{penalty}{(only method = "linear", unbounded) NULL or positive cost(s) for ridge
+(penalized) calibration. A positive scalar applies the same cost to every
+constraint; a named vector sets a cost per constraint (matched to the
+model.matrix columns). The cost is scale-free: a large value keeps the
+constraint (near) exact, a small value relaxes it to control extreme weights
+when there are many auxiliaries. Under ridge the achieved totals no longer
+match the targets exactly; the diagnostics report the deviation.}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
-Calibration to population totals
+Adjusts the weights so that the weighted sample reproduces known population
+totals of auxiliary variables, while staying as close as possible to the input
+weights (Deville & Sarndal 1992). Supports raking (IPF on categorical
+margins), post-stratification, and linear/GREG calibration, optionally bounded
+(a logit distance or explicit bounds on the calibration factor). For linear
+calibration, \code{penalty} enables ridge (penalized) calibration, which relaxes
+the targets to control extreme weights when there are many auxiliaries.
 }
 \examples{
 # Raking to population margins
@@ -68,5 +114,61 @@ weighting_spec(sample_survey, base_weights = pw) |>
   step_calibrate(method = "raking",
                  margins = list(sex    = c(table(population$sex)),
                                 region = c(table(population$region)))) |>
+  prep()
+
+# ridge (penalized) calibration: relaxes the targets to control extreme
+# weights; a smaller penalty relaxes more. Uses only base R.
+pop_tot <- c("(Intercept)" = nrow(population),
+             regionSouth = sum(population$region == "South"),
+             regionEast  = sum(population$region == "East"),
+             regionWest  = sum(population$region == "West"),
+             sexM        = sum(population$sex == "M"))
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
+  step_calibrate(method = "linear", formula = ~ region + sex,
+                 totals = pop_tot, penalty = 1) |>
+  prep()
+
+# --- Tidy `totals` format (recommended) ---------------------------------
+# Post-stratification: give the population counts as a data frame with one or
+# more category columns plus a counts column named by `count`.
+ps_totals <- as.data.frame(table(region = population$region, sex = population$sex))
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_calibrate(method = "poststratify", totals = ps_totals, count = "Freq") |>
+  prep()
+
+# Raking: a list of data frames, one per margin.
+m_region <- as.data.frame(table(region = population$region))
+m_sex    <- as.data.frame(table(sex = population$sex))
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_calibrate(method = "raking",
+                 totals = list(m_region, m_sex), count = "Freq") |>
+  prep()
+
+# Linear/GREG with mixed auxiliaries: data frames for categoricals (all
+# categories) and a single number for a continuous total. weightflow builds
+# the model.matrix totals internally, so you never drop a reference category.
+resp <- subset(sample_survey, responded == 1)
+weighting_spec(resp, base_weights = pw) |>
+  step_calibrate(method = "linear", formula = ~ region + sex + income,
+                 totals = list(region = m_region, sex = m_sex,
+                               income = sum(population$income)),
+                 count = "Freq") |>
+  prep()
+
+# Domain (partitioned) calibration: `by` calibrates independently within each
+# domain, each to its own totals. The domain is an extra column in the tidy
+# totals, not a term in the formula/margins. Here we rake two margins (sex and
+# age group) within each region, which a single global cross could not express.
+pop  <- transform(population,
+  age_grp = cut(age, c(0, 30, 45, 60, Inf), labels = c("18-30","31-45","46-60","60+")))
+samp <- transform(sample_survey,
+  age_grp = cut(age, c(0, 30, 45, 60, Inf), labels = c("18-30","31-45","46-60","60+")))
+sex_by_region <- as.data.frame(table(region = pop$region, sex     = pop$sex))
+age_by_region <- as.data.frame(table(region = pop$region, age_grp = pop$age_grp))
+weighting_spec(samp, base_weights = pw) |>
+  step_calibrate(method = "raking",
+                 totals = list(sex_by_region, age_by_region),
+                 count = "Freq", by = "region") |>
   prep()
 }

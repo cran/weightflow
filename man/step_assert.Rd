@@ -25,7 +25,9 @@ ratio (per active unit).}
 \item{on_fail}{"error" (stop the cascade) or "warning".}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this checkpoint appended to its
+recipe. The check is recorded only; it is evaluated when \code{prep()} is called
+and does not modify the weights.
 }
 \description{
 A checkpoint that does NOT change the weights; it verifies conditions and

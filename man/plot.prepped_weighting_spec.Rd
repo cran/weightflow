@@ -17,7 +17,8 @@ stage), all in one grid. "factors": only the per-step factor histograms.
 \item{...}{ignored.}
 }
 \value{
-(invisibly) \code{x}. Called for its side effect of drawing the diagnostic plots.
+Invisibly, the prepped object \code{x}. Called for its side effect of
+drawing the diagnostic plots described above.
 }
 \description{
 Diagnostic plots for the weights

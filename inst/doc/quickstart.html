@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>From raw sample to final weights</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">From raw sample to final weights</h1>
+
+
+
+<blockquote>
+<p><strong>New here?</strong> This is the 15-minute tour: what problem
+<code>weightflow</code> solves and the shortest recipe that produces
+analysis weights. For the statistical reasoning behind each adjustment,
+read <a href="weightflow.html"><em>Staged survey weighting: the
+adjustment logic</em></a>.</p>
+</blockquote>
+<div id="the-problem-is-not-the-weights" class="section level2">
+<h2>The problem is not the weights</h2>
+<p>Every survey organization has weighting scripts. They grow over time,
+absorb new adjustments, and eventually become difficult to understand,
+maintain and reproduce. Two analysts can implement the <em>same</em>
+weighting strategy in different ways, which turns audits, updates and
+methodological reviews into archaeology.</p>
+<p>The weights themselves are rarely the hard part. The hard part is
+that the <em>strategy</em> (the sequence of methodological decisions
+that produced the weights) is scattered across files, intermediate
+objects and the memory of whoever ran them last. When the responsible
+methodologist moves on, the knowledge often leaves with them.</p>
+<p>A typical pipeline looks like this:</p>
+<svg width="100%" viewBox="0 0 680 470" role="img" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,&#39;Inter&#39;,Segoe UI,Roboto,sans-serif;">
+<title>
+Weighting spread across scripts and intermediate files
+</title>
+<desc>Sampling feeds script1.R, which writes weights1.csv, read by
+script2.R, which writes weights2.csv, read by script_final_v7.R, which
+writes final_weights_NEW.csv. The steps zigzag between code files and
+intermediate CSVs.</desc>
+<defs><marker id="qsred" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#9a8f8f" stroke-width="1.7" /></marker></defs>
+<line x1="320" y1="62" x2="188" y2="90" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<line x1="255" y1="120" x2="423" y2="168" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<line x1="425" y1="182" x2="257" y2="220" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<line x1="255" y1="238" x2="423" y2="284" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<line x1="425" y1="298" x2="262" y2="336" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<line x1="265" y1="356" x2="413" y2="390" stroke="#9a8f8f" stroke-width="1.5" marker-end="url(#qsred)"></line>
+<rect x="290" y="28" width="100" height="34" rx="17" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.3" />
+<text x="340" y="50" text-anchor="middle" font-size="13" fill="#20242e">sampling</text>
+<rect x="95" y="90" width="160" height="40" rx="8" fill="#e8e7ef" stroke="#6b6a86" stroke-width="1.3" />
+<text x="175" y="115" text-anchor="middle" font-size="13" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#33323f">script1.R</text>
+<rect x="425" y="150" width="160" height="40" rx="8" fill="#f4e2b8" stroke="#c9902a" stroke-width="1.3" />
+<text x="505" y="175" text-anchor="middle" font-size="13" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#5c4410">weights1.csv</text>
+<rect x="95" y="208" width="160" height="40" rx="8" fill="#e8e7ef" stroke="#6b6a86" stroke-width="1.3" />
+<text x="175" y="233" text-anchor="middle" font-size="13" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#33323f">script2.R</text>
+<rect x="425" y="266" width="160" height="40" rx="8" fill="#f4e2b8" stroke="#c9902a" stroke-width="1.3" />
+<text x="505" y="291" text-anchor="middle" font-size="13" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#5c4410">weights2.csv</text>
+<rect x="90" y="324" width="175" height="40" rx="8" fill="#e8e7ef" stroke="#6b6a86" stroke-width="1.3" />
+<text x="177" y="349" text-anchor="middle" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#33323f">script_final_v7.R</text>
+<rect x="413" y="382" width="190" height="40" rx="8" fill="#f2cfc7" stroke="#c0492f" stroke-width="1.3" />
+<text x="508" y="407" text-anchor="middle" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#7a2618">final_weights_NEW.csv</text>
+<text x="340" y="452" text-anchor="middle" font-size="12" font-style="italic" fill="#8a7f7f">Logic
+scattered across files and run order, not kept in one place.</text>
+</svg>
+<p>Anyone who has worked in a statistical office recognizes this
+immediately. Along the way you typically reach for many different
+packages, spread the logic across several scripts, and generate hundreds
+of lines of code. The methodology is real, but it is <em>implicit</em>:
+hidden in file order, column names, intermediate files and undocumented
+tweaks.</p>
+</div>
+<div id="a-map-of-what-the-steps-are-for" class="section level2">
+<h2>A map of what the steps are for</h2>
+<p>Before we look at any code, one picture. Weights exist because the
+realized sample differs from the population we want to describe, in
+specific, nameable ways. Each region below is corrected by a specific
+step.</p>
+<svg width="100%" viewBox="0 0 680 560" role="img" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,&#39;Inter&#39;,Segoe UI,Roboto,sans-serif;">
+<title>
+From target population to respondents
+</title>
+<desc>Two overlapping ellipses show the target population and the
+sampling frame, with undercoverage, an in-scope overlap, and
+out-of-scope units. The in-scope area is sampled; the sample splits into
+unknown eligibility, ineligible and eligible, and eligible splits into
+nonrespondents and respondents. A legend maps each region to a
+weightflow step.</desc>
+<defs><marker id="qsarrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#7a7a86" stroke-width="1.6" /></marker></defs>
+<ellipse cx="255" cy="112" rx="152" ry="72" fill="#7a6ad0" fill-opacity="0.16" stroke="#3d3580" stroke-width="1.5"></ellipse>
+<ellipse cx="425" cy="112" rx="152" ry="72" fill="#8a8f9a" fill-opacity="0.16" stroke="#5b6472" stroke-width="1.5"></ellipse>
+<text x="180" y="92" text-anchor="middle" font-size="14" font-weight="600" fill="#20242e">Target
+population</text>
+<text x="500" y="92" text-anchor="middle" font-size="14" font-weight="600" fill="#20242e">Frame</text>
+<text x="178" y="120" text-anchor="middle" font-size="12" fill="#3a3f4a">Undercoverage</text>
+<text x="178" y="136" text-anchor="middle" font-size="12" fill="#3a3f4a">(missing
+from frame)</text>
+<text x="340" y="116" text-anchor="middle" font-size="14" fill="#20242e">In
+scope</text>
+<text x="500" y="120" text-anchor="middle" font-size="12" fill="#3a3f4a">Out
+of scope</text>
+<text x="500" y="136" text-anchor="middle" font-size="12" fill="#3a3f4a">(ineligible
+on frame)</text>
+<line x1="340" y1="184" x2="340" y2="230" stroke="#7a7a86" stroke-width="1.5" marker-end="url(#qsarrow)"></line>
+<text x="350" y="212" text-anchor="start" font-size="12" fill="#3a3f4a">draw
+sample (design weight 1/π)</text>
+<rect x="55" y="232" width="570" height="170" rx="10" fill="#f6f5fb" stroke="#3d3580" stroke-width="1.4" />
+<text x="70" y="256" text-anchor="start" font-size="14" font-weight="600" fill="#20242e">Sample
+(known inclusion probability π)</text>
+<rect x="75" y="284" width="135" height="98" rx="8" fill="#f4e2b8" stroke="#c9902a" stroke-width="1.3" />
+<text x="142" y="328" text-anchor="middle" font-size="14" fill="#20242e">Unknown</text>
+<text x="142" y="346" text-anchor="middle" font-size="14" fill="#20242e">eligibility</text>
+<rect x="225" y="284" width="120" height="98" rx="8" fill="#f2cfc7" stroke="#c0492f" stroke-width="1.3" />
+<text x="285" y="338" text-anchor="middle" font-size="14" fill="#20242e">Ineligible</text>
+<rect x="360" y="270" width="252" height="115" rx="8" fill="#e7e3f5" stroke="#7a6ad0" stroke-width="1.3" />
+<text x="374" y="289" text-anchor="start" font-size="14" font-weight="600" fill="#20242e">Eligible</text>
+<rect x="374" y="300" width="108" height="72" rx="7" fill="#e3e5e9" stroke="#8a8f9a" stroke-width="1.3" />
+<text x="428" y="332" text-anchor="middle" font-size="13" fill="#20242e">Non-</text>
+<text x="428" y="350" text-anchor="middle" font-size="13" fill="#20242e">respondents</text>
+<rect x="498" y="300" width="100" height="72" rx="7" fill="#cdeadd" stroke="#1d9e75" stroke-width="1.3" />
+<text x="548" y="341" text-anchor="middle" font-size="13" fill="#20242e">Respondents</text>
+<circle cx="74" cy="432" r="6" fill="#c9902a"></circle>
+<text x="90" y="436" text-anchor="start" font-size="12" fill="#3a3f4a">Unknown
+eligibility → step_unknown_eligibility(): redistribute their
+weight</text> <circle cx="74" cy="456" r="6" fill="#c0492f"></circle>
+<text x="90" y="460" text-anchor="start" font-size="12" fill="#3a3f4a">Ineligible
+→ step_drop_ineligible(): remove from the sample</text>
+<circle cx="74" cy="480" r="6" fill="#8a8f9a"></circle>
+<text x="90" y="484" text-anchor="start" font-size="12" fill="#3a3f4a">Nonrespondents
+→ step_nonresponse(): respondents absorb their weight</text>
+<circle cx="74" cy="504" r="6" fill="#1d9e75"></circle>
+<text x="90" y="508" text-anchor="start" font-size="12" fill="#3a3f4a">Respondents
+carry the final analysis weight</text>
+<circle cx="74" cy="528" r="6" fill="#7a6ad0"></circle>
+<text x="90" y="532" text-anchor="start" font-size="12" fill="#3a3f4a">Coverage
+&amp; known totals → step_calibrate(): align to the population</text>
+</svg>
+<p>The frame and the population <em>overlap</em> rather than nest: some
+of the target population is missing from the frame (undercoverage) and
+some frame units are out of scope (overcoverage). From the sample
+downward it is pure nesting (sample ⊃ eligible ⊃ respondents), and each
+split is a step. The weights are not conjured; they are the consequence
+of this sequence of decisions.</p>
+</div>
+<div id="the-same-strategy-as-one-object" class="section level2">
+<h2>The same strategy as one object</h2>
+<p><code>weightflow</code> expresses the whole strategy as a single,
+explicit recipe. Nothing is hidden in a script; nothing lives in an
+intermediate CSV. Every methodological decision is a
+<code>step_*()</code> you can read top to bottom:</p>
+<svg width="100%" viewBox="0 0 680 448" role="img" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,&#39;Inter&#39;,Segoe UI,Roboto,sans-serif;">
+<title>
+The whole strategy as one recipe object
+</title>
+<desc>A single container holds weighting_spec() and a stack of step
+functions: unknown eligibility, drop ineligible, select within,
+nonresponse, calibrate and trim. An arrow leaves the container to
+prep(), which produces the final weights.</desc>
+<defs><marker id="qspur" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#7a6ad0" stroke-width="1.7" /></marker></defs>
+<text x="60" y="44" font-size="12" font-style="italic" fill="#6a6f7a">One
+object: the whole strategy, defined lazily, read top to bottom.</text>
+<rect x="55" y="55" width="570" height="300" rx="12" fill="#f6f5fb" stroke="#3d3580" stroke-width="1.6" />
+<line x1="72" y1="98" x2="72" y2="318" stroke="#cbb8e0" stroke-width="1.6"></line>
+<text x="84" y="90" font-size="13" font-weight="600" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">weighting_spec(data,
+base_weights)</text>
+<text x="372" y="90" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+design weights 1/π</text>
+<rect x="84" y="110" width="212" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="128" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_unknown_eligibility()</text>
+<text x="372" y="128" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+resolve unknown eligibility</text>
+<rect x="84" y="148" width="182" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="166" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_drop_ineligible()</text>
+<text x="372" y="166" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+remove out-of-scope units</text>
+<rect x="84" y="186" width="168" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="204" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_select_within()</text>
+<text x="372" y="204" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+within-household selection</text>
+<rect x="84" y="224" width="156" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="242" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_nonresponse()</text>
+<text x="372" y="242" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+correct for nonresponse</text>
+<rect x="84" y="262" width="140" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="280" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_calibrate()</text>
+<text x="372" y="280" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+align to population totals</text>
+<rect x="84" y="300" width="104" height="26" rx="13" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.2" />
+<text x="95" y="318" font-size="12.5" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">step_trim()</text>
+<text x="372" y="318" font-size="12" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#8a8f9a">#
+tame extreme weights</text>
+<line x1="150" y1="355" x2="150" y2="382" stroke="#7a6ad0" stroke-width="1.5" marker-end="url(#qspur)"></line>
+<rect x="103" y="382" width="95" height="32" rx="16" fill="#ece9f6" stroke="#7a6ad0" stroke-width="1.4" />
+<text x="150" y="403" text-anchor="middle" font-size="13" font-family="&#39;JetBrains Mono&#39;,ui-monospace,monospace" fill="#3d3580">prep()</text>
+<line x1="198" y1="398" x2="243" y2="398" stroke="#7a6ad0" stroke-width="1.5" marker-end="url(#qspur)"></line>
+<rect x="245" y="382" width="170" height="32" rx="16" fill="#cdeadd" stroke="#1d9e75" stroke-width="1.4" />
+<text x="330" y="403" text-anchor="middle" font-size="13" fill="#14603f">final
+weights</text>
+<text x="440" y="403" font-size="12" font-style="italic" fill="#6a6f7a">one
+output of the object</text>
+</svg>
+<blockquote>
+<p><strong><code>weightflow</code> doesn’t just compute weights: it
+documents how they are constructed.</strong></p>
+<p>It does compute the weights, of course. But a weighting strategy is a
+sequence of methodological decisions, and <code>weightflow</code> turns
+those decisions into an explicit object that can be inspected,
+reproduced, modified and reused. The final weights are only <em>one</em>
+output of that object, and usually the least valuable one. The recipe is
+the institutional asset.</p>
+</blockquote>
+<p>If you know the <code>recipes</code>/<code>tidymodels</code> world,
+the analogy is deliberate: a recipe describes how a dish is produced,
+not the dish itself. A <code>weightflow</code> recipe describes how the
+weights are produced, not the weights themselves.</p>
+</div>
+<div id="the-shortest-real-recipe" class="section level2">
+<h2>The shortest real recipe</h2>
+<p>Enough theory. <code>weightflow</code> ships a small bundled example
+(a stratified household sample, <code>sample_survey</code>, drawn from a
+known <code>population</code>), so every line below actually runs.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">str</span>(sample_survey[, <span class="fu">c</span>(<span class="st">&quot;pw&quot;</span>, <span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;unknown_elig&quot;</span>, <span class="st">&quot;responded&quot;</span>)])</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co">#&gt; &#39;data.frame&#39;:    467 obs. of  5 variables:</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co">#&gt;  $ pw          : num  12.5 12.5 12.5 12.5 12.5 12.5 12.5 12.5 12.5 12.5 ...</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co">#&gt;  $ region      : Factor w/ 4 levels &quot;North&quot;,&quot;South&quot;,..: 1 1 1 1 1 1 1 1 1 1 ...</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="co">#&gt;  $ sex         : Factor w/ 2 levels &quot;F&quot;,&quot;M&quot;: 1 1 2 2 2 2 1 1 1 1 ...</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="co">#&gt;  $ unknown_elig: int  0 0 0 0 0 0 0 0 0 0 ...</span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="co">#&gt;  $ responded   : num  1 0 0 0 1 1 0 1 1 1 ...</span></span></code></pre></div>
+<p>A minimal but complete cascade: start from the design weights,
+resolve unknown eligibility, correct for nonresponse, and calibrate to
+the population totals of <code>region</code> and <code>sex</code>. We
+pass those totals in the <strong>tidy</strong> form: a small data frame
+per margin with the categories and a counts column. <code>table()</code>
+already produces exactly that shape (its counts column is named
+<code>Freq</code>):</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>m_region <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">table</span>(<span class="at">region =</span> population<span class="sc">$</span>region))</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>m_sex    <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">table</span>(<span class="at">sex    =</span> population<span class="sc">$</span>sex))</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>m_region</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt;   region Freq</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; 1  North 1570</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; 2  South 1250</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; 3   East  927</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; 4   West  748</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>                 <span class="at">totals =</span> <span class="fu">list</span>(m_region, m_sex), <span class="at">count =</span> <span class="st">&quot;Freq&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<p><code>prep()</code> is where the recipe is actually estimated.
+Everything before it only <em>records</em> the strategy.
+<code>collect_weights()</code> returns the data with the final weight
+attached as <code>.weight</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>w <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(fit)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">summary</span>(w<span class="sc">$</span>.weight)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. </span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;   10.69   12.85   18.07   16.65   19.35   20.94</span></span></code></pre></div>
+</div>
+<div id="the-object-is-the-documentation" class="section level2">
+<h2>The object is the documentation</h2>
+<p>Because the strategy is an object, it explains itself.
+<code>summary()</code> walks the cascade step by step, reporting how
+many units each stage touched, how weights changed, and diagnostics such
+as the design effect:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">summary</span>(fit)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; Data    : 467 cases</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt;   2. nonresponse (weighting class)</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt;   3. calibration (raking)</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt;                             stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&gt;                              base      467    4371  0.236     1.056   442</span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&gt;  stage_1_step_unknown_eligibility      449    4371  0.250     1.063   423</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&gt;          stage_2_step_nonresponse      270    4371  0.144     1.021   265</span></span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="co">#&gt;            stage_3_step_calibrate      270    4495  0.211     1.045   258</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a><span class="co">#&gt; --- Step 1: unknown eligibility ---</span></span>
+<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a><span class="co">#&gt;   cell  level n_known n_unknown   factor</span></span>
+<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a><span class="co">#&gt;   East person      96         0 1.000000</span></span>
+<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a><span class="co">#&gt;  North person     113         6 1.053097</span></span>
+<span id="cb5-27"><a href="#cb5-27" tabindex="-1"></a><span class="co">#&gt;  South person     113         8 1.070796</span></span>
+<span id="cb5-28"><a href="#cb5-28" tabindex="-1"></a><span class="co">#&gt;   West person     127         4 1.031496</span></span>
+<span id="cb5-29"><a href="#cb5-29" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.056 -&gt; 1.063   |   n_eff: 442 -&gt; 423</span></span>
+<span id="cb5-30"><a href="#cb5-30" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-31"><a href="#cb5-31" tabindex="-1"></a><span class="co">#&gt; --- Step 2: nonresponse (weighting class) ---</span></span>
+<span id="cb5-32"><a href="#cb5-32" tabindex="-1"></a><span class="co">#&gt;   cell n_respondents n_nonresponse   factor</span></span>
+<span id="cb5-33"><a href="#cb5-33" tabindex="-1"></a><span class="co">#&gt;   East            52            44 1.846154</span></span>
+<span id="cb5-34"><a href="#cb5-34" tabindex="-1"></a><span class="co">#&gt;  North            78            35 1.448718</span></span>
+<span id="cb5-35"><a href="#cb5-35" tabindex="-1"></a><span class="co">#&gt;  South            72            41 1.569444</span></span>
+<span id="cb5-36"><a href="#cb5-36" tabindex="-1"></a><span class="co">#&gt;   West            68            59 1.867647</span></span>
+<span id="cb5-37"><a href="#cb5-37" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.063 -&gt; 1.021   |   n_eff: 423 -&gt; 265</span></span>
+<span id="cb5-38"><a href="#cb5-38" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-39"><a href="#cb5-39" tabindex="-1"></a><span class="co">#&gt; --- Step 3: calibration (raking) ---</span></span>
+<span id="cb5-40"><a href="#cb5-40" tabindex="-1"></a><span class="co">#&gt;  variable category target achieved</span></span>
+<span id="cb5-41"><a href="#cb5-41" tabindex="-1"></a><span class="co">#&gt;    region     East    927      927</span></span>
+<span id="cb5-42"><a href="#cb5-42" tabindex="-1"></a><span class="co">#&gt;    region    North   1570     1570</span></span>
+<span id="cb5-43"><a href="#cb5-43" tabindex="-1"></a><span class="co">#&gt;    region    South   1250     1250</span></span>
+<span id="cb5-44"><a href="#cb5-44" tabindex="-1"></a><span class="co">#&gt;    region     West    748      748</span></span>
+<span id="cb5-45"><a href="#cb5-45" tabindex="-1"></a><span class="co">#&gt;       sex        F   2311     2311</span></span>
+<span id="cb5-46"><a href="#cb5-46" tabindex="-1"></a><span class="co">#&gt;       sex        M   2184     2184</span></span>
+<span id="cb5-47"><a href="#cb5-47" tabindex="-1"></a><span class="co">#&gt; (converged/iterated in 5 iterations)</span></span>
+<span id="cb5-48"><a href="#cb5-48" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.021 -&gt; 1.045   |   n_eff: 265 -&gt; 258</span></span>
+<span id="cb5-49"><a href="#cb5-49" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-50"><a href="#cb5-50" tabindex="-1"></a><span class="co">#&gt; R-indicator (representativity of response): 0.869  (on region)</span></span></code></pre></div>
+<p>That printout <em>is</em> the methodological record. You did not
+write a separate memo describing what the scripts did; the recipe and
+its summary are the memo. Re-running it next year, or handing it to a
+colleague, reproduces the exact same weights and the exact same
+explanation.</p>
+</div>
+<div id="where-to-go-next" class="section level2">
+<h2>Where to go next</h2>
+<p>You now have runnable weights and a mental map. To go deeper:</p>
+<ul>
+<li><a href="weightflow.html"><em>Staged survey weighting: the
+adjustment logic</em></a> covers the statistical reasoning behind each
+stage and why order matters.</li>
+<li><a href="preparing-the-sample.html"><em>Preparing the
+sample</em></a> covers eligibility, rosters and within-household
+selection in detail.</li>
+<li><a href="nonresponse-propensities.html"><em>Nonresponse: weighting
+classes and propensities</em></a> and <a href="calibration.html"><em>Calibration</em></a> cover the two workhorse
+adjustments.</li>
+<li><a href="variance-estimation.html"><em>Variance estimation</em></a>
+covers the bootstrap and jackknife that re-apply the whole recipe, so
+uncertainty from nonresponse and calibration reaches your standard
+errors.</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

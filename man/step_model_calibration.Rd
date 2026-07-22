@@ -9,8 +9,12 @@ step_model_calibration(
   x_formula,
   models,
   population,
+  x_totals = NULL,
+  count = "Freq",
   cluster = NULL,
-  equal_within_cluster = FALSE
+  equal_within_cluster = FALSE,
+  crossfit = NULL,
+  crossfit_seed = NULL
 )
 }
 \arguments{
@@ -22,7 +26,24 @@ step_model_calibration(
 the prediction constraints.}
 
 \item{population}{population data.frame with the auxiliary and predictor
-columns (the y variables are not needed; they are predicted).}
+columns (the y variables are not needed; they are predicted). Always
+required: the model-assisted block predicts each y over every population
+unit, which cannot be done from aggregated totals.}
+
+\item{x_totals}{optional population totals for the consistency auxiliaries
+(\code{x_formula}), for when they come from an external source rather than from
+\code{population} (e.g. an official control total, a variable not present in the
+frame). Two shapes, the same as \code{step_calibrate(method = "linear")}: the
+tidy format, a named list matching the formula terms with a data frame (all
+categories + a counts column named by \code{count}) per factor and a single
+number per continuous total; or the classic model-matrix vector (intercept
+plus treatment contrasts). When NULL (default) the X totals are taken from
+\code{population}. When given, the X totals no longer require \code{x_formula} columns
+to exist in \code{population} (only in the sample), and \code{population} is used only
+for the model predictions.}
+
+\item{count}{name of the counts column in the tidy \code{x_totals} data frames.
+Only used when \code{x_totals} is given in the tidy (data-frame) format.}
 
 \item{cluster}{name of the cluster id column (e.g. "household"), for equal
 weights within the cluster.}
@@ -30,9 +51,19 @@ weights within the cluster.}
 \item{equal_within_cluster}{logical. If TRUE, integrative calibration: a
 single weight per cluster. Requires \code{cluster} and that the incoming weight
 be uniform within the cluster.}
+
+\item{crossfit}{integer or NULL. If given (K >= 2 folds), the outcome models
+are fitted by K-fold cross-fitting: the sample predictions are out-of-fold
+(each unit predicted by a model that did not see it), which avoids
+overfitting with flexible engines; the population total of the predictions
+uses the full model. Folds are formed by \code{cluster} when given. NULL
+(default) fits and predicts in-sample.}
+
+\item{crossfit_seed}{integer or NULL. Seed for reproducible fold assignment.}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
 Fits a working model for each study variable y, predicts over the population,
@@ -53,4 +84,43 @@ weighting_spec(sample_survey, base_weights = pw) |>
     models     = list(income = y_model(income ~ age + sex, engine = "glm")),
     population = population) |>
   prep()
+
+# with cross-fitting (out-of-fold predictions, avoids overfitting)
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
+  step_model_calibration(
+    x_formula  = ~ sex + region,
+    models     = list(income = y_model(income ~ age + sex, engine = "glm")),
+    population = population, crossfit = 5, crossfit_seed = 1) |>
+  prep()
+
+# consistency totals from an external source (tidy format): a data frame per
+# factor and a single number per continuous total. `population` is still used
+# for the model predictions. Adjust for nonresponse first, since the outcome
+# is only observed for respondents.
+m_region <- as.data.frame(table(region = population$region))
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
+  step_model_calibration(
+    x_formula  = ~ region + age,
+    models     = list(income = y_model(income ~ age + sex, engine = "glm")),
+    population = population,
+    x_totals   = list(region = m_region, age = sum(population$age)),
+    count      = "Freq") |>
+  prep()
+
+# equal weights within a household (integrative, Lemaitre-Dufour): one weight
+# per cluster, so person and household estimates stay coherent. The final
+# weights are constant within each cluster among its active members.
+fit_hh <- weighting_spec(sample_survey, base_weights = pw) |>
+  step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
+  step_model_calibration(
+    x_formula  = ~ sex + region,
+    models     = list(income = y_model(income ~ age + sex, engine = "glm")),
+    population  = population,
+    cluster = "household_id", equal_within_cluster = TRUE) |>
+  prep()
+w <- fit_hh$final_weight
+max(tapply(w[w > 0], sample_survey$household_id[w > 0],
+           function(x) diff(range(x))))    # 0: one weight per household
 }

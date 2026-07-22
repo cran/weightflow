@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Model calibration (model-assisted weighting)</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Model calibration (model-assisted
+weighting)</h1>
+
+
+
+<p>Ordinary calibration forces the weighted sample to match known
+population totals of <em>auxiliary</em> variables. Model calibration (Wu
+and Sitter, 2001) goes further: it uses a working model for the
+<em>outcome</em> to build a better calibration variable.
+<code>step_model_calibration()</code> implements it, and (less commonly)
+lets you keep the ordinary consistency constraints on the auxiliaries in
+the same step.</p>
+<p>Throughout we follow the design-based notation: <span class="math inline">\(U = \{1, \dots, N\}\)</span> is the finite
+population, <span class="math inline">\(s \subseteq U\)</span> the
+sample, and <span class="math inline">\(w_i\)</span> the weight of unit
+<span class="math inline">\(i\)</span>. The study variable is <span class="math inline">\(y\)</span>, observed only in <span class="math inline">\(s\)</span>, with population total <span class="math inline">\(Y =
+\sum_{i \in U} y_i\)</span>. Each unit carries a vector of auxiliaries
+<span class="math inline">\(\mathbf{x}_i\)</span>, known for every unit
+of <span class="math inline">\(U\)</span>, with population totals <span class="math inline">\(\mathbf{X} = \sum_{i \in
+U} \mathbf{x}_i\)</span>.</p>
+<div id="the-idea" class="section level2">
+<h2>The idea</h2>
+<p>You do not know the total <span class="math inline">\(Y\)</span> and
+estimating it is the goal. But you can fit a working model <span class="math inline">\(\hat y_i = m(\mathbf{x}_i)\)</span> for the
+outcome on the sample, predict the fitted values for every unit in the
+sample and in the population, and calibrate so that the weighted sample
+total of the predictions equals their population total:</p>
+<p><span class="math display">\[\sum_{i \in s} w_i^{\mathrm{mc}}\,\hat
+y_i = \sum_{i \in U} \hat y_i .\]</span></p>
+<p>The calibration target is the right-hand side, <span class="math inline">\(\sum_{i \in U} \hat y_i\)</span>, the total of the
+predictions over the whole population. This is computable, because the
+predictors <span class="math inline">\(\mathbf{x}_i\)</span> are known
+for every population unit, so <span class="math inline">\(\hat y_i =
+m(\mathbf{x}_i)\)</span> can be evaluated and summed across <span class="math inline">\(U\)</span>. The total of <span class="math inline">\(y\)</span> itself, <span class="math inline">\(Y =
+\sum_{i \in U} y_i\)</span>, is not computable: <span class="math inline">\(y\)</span> is observed only in the sample. Model
+calibration therefore calibrates against the population total of the
+predictions as a computable stand-in for the unknown total of <span class="math inline">\(y\)</span>. The resulting estimator</p>
+<p><span class="math display">\[\hat Y_{\mathrm{mc}} = \sum_{i \in s}
+w_i^{\mathrm{mc}}\,y_i\]</span></p>
+<p>is design-consistent and efficient when the model predicts <span class="math inline">\(y\)</span> well, since its error depends on the
+residuals <span class="math inline">\(y_i - \hat y_i\)</span> rather
+than on <span class="math inline">\(y\)</span> itself. Wu (2003)
+established the optimality of this estimator within a class of
+calibration estimators, and Montanari and Ranalli (2005) extended it to
+nonparametric models, the natural home of the tree and forest
+learners.</p>
+</div>
+<div id="in-weightflow-with-a-random-forest" class="section level2">
+<h2>In weightflow, with a random forest</h2>
+<p><code>step_model_calibration()</code> takes consistency auxiliaries
+(<code>x_formula</code>, with known population totals), a named list of
+working <code>models</code> from <code>y_model()</code>, and the
+<code>population</code> frame used to compute the prediction totals.
+Here, the working model is a random forest (although other models can be
+used), which captures nonlinear structure in the predictors without
+specifying it.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>spec <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>  <span class="fu">step_model_calibration</span>(</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>    <span class="at">x_formula  =</span> <span class="sc">~</span> region <span class="sc">+</span> sex,                       <span class="co"># consistency constraints</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>    <span class="at">models     =</span> <span class="fu">list</span>(<span class="at">income =</span> <span class="fu">y_model</span>(income <span class="sc">~</span> age <span class="sc">+</span> sex <span class="sc">+</span> region,</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>                                       <span class="at">engine =</span> <span class="st">&quot;forest&quot;</span>)),</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>    <span class="at">population =</span> population)</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>fitted <span class="ot">&lt;-</span> <span class="fu">prep</span>(spec)</span></code></pre></div>
+<p>The model is fitted on the responding units only (where
+<code>income</code> is observed), weighted by the weights entering the
+step</p>
+</div>
+<div id="validation-the-constraints-are-met-exactly" class="section level2">
+<h2>Validation: the constraints are met exactly</h2>
+<p>Both kinds of constraint hold afterwards: the weighted totals of the
+consistency auxiliaries match their known population totals, and the
+weighted total of the income predictions matches its population total.
+The step’s diagnostics show target versus achieved:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>fitted<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#&gt;              constraint            type   target achieved</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; (Intercept) (Intercept) X (consistency)     4495     4495</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; regionSouth regionSouth X (consistency)     1250     1250</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; regionEast   regionEast X (consistency)      927      927</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; regionWest   regionWest X (consistency)      748      748</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; sexM               sexM X (consistency)     2184     2184</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; income           income       y (model) 91993682 91993682</span></span></code></pre></div>
+<p>The <code>X (consistency)</code> rows are the region and sex totals;
+the <code>y (model)</code> row is the population total of the forest
+predictions. Each <code>achieved</code> equals its
+<code>target</code>.</p>
+</div>
+<div id="does-it-help-the-estimate" class="section level2">
+<h2>Does it help the estimate?</h2>
+<p>Because the weights are calibrated on the income predictions, the
+weighted estimate of the income total tracks the true population
+total:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>est_total  <span class="ot">&lt;-</span> <span class="fu">sum</span>(fitted<span class="sc">$</span>final_weight <span class="sc">*</span> sample_survey<span class="sc">$</span>income, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>true_total <span class="ot">&lt;-</span> <span class="fu">sum</span>(population<span class="sc">$</span>income)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="fu">c</span>(<span class="at">estimated =</span> est_total, <span class="at">population =</span> true_total,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">rel_error =</span> (est_total <span class="sc">-</span> true_total) <span class="sc">/</span> true_total)</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;    estimated   population    rel_error </span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 8.997765e+07 8.674501e+07 3.726604e-02</span></span></code></pre></div>
+<p>The estimator stays design-based, <span class="math inline">\(\hat
+Y_{\mathrm{mc}} = \sum_{i \in s} w_i\,y_i\)</span>; the model only
+shapes the weights to make it efficient. A poor model does not bias the
+result, it just yields a less efficient one, because the design-based
+form is (approximately) unbiased regardless of how well <span class="math inline">\(m\)</span> fits.</p>
+</div>
+<div id="what-you-need-unit-level-auxiliaries" class="section level2">
+<h2>What you need: unit-level auxiliaries</h2>
+<p>This is the practical asymmetry that sets model calibration apart.
+Raking, post-stratification and GREG need only the population totals
+<span class="math inline">\(\mathbf{X}\)</span> of the auxiliaries
+(e.g. numbers such as “1570 people in the North, 2311 women”) which
+official statistics routinely publish. Model calibration needs more: the
+auxiliaries <span class="math inline">\(\mathbf{x}_i\)</span> at the
+unit level for the whole population, because the fitted values <span class="math inline">\(\hat y_i\)</span> must be evaluated for every
+population unit before being summed. This is the complete auxiliary
+information of the Wu-Sitter setting, and it confines the method to
+situations where a population register, a census microdata file, or a
+large reference frame is available. When only published totals are at
+hand, the analyst is restricted to raking, post-stratification or
+GREG.</p>
+<p>That difference is visible in the arguments:
+<code>step_calibrate()</code> takes <code>margins</code> or
+<code>totals</code> (vectors of totals), whereas
+<code>step_model_calibration()</code> takes <code>population</code>, a
+data frame with one row per population unit carrying the predictors.</p>
+</div>
+<div id="the-hybrid-model-term-and-consistency-constraints" class="section level2">
+<h2>The hybrid: model term and consistency constraints</h2>
+<p>The distinctive part of the step is the <strong>hybrid</strong>: it
+imposes the consistency constraints on the raw auxiliary totals and the
+model-calibration constraint on the predictions at once,</p>
+<p><span class="math display">\[\sum_{i \in s} w_i\,\mathbf{x}_i =
+\mathbf{X}
+\qquad\text{and}\qquad
+\sum_{i \in s} w_i\,\hat y_i = \sum_{i \in U} \hat y_i .\]</span></p>
+<p>Whether this second constraint adds anything depends on the model. If
+<span class="math inline">\(m\)</span> is linear in <span class="math inline">\(\mathbf{x}\)</span>, the predictions lie in the
+span of <span class="math inline">\(\mathbf{x}\)</span>, the second
+constraint is already implied by the first, and the estimator reduces to
+the generalized regression (GREG) estimator. If <span class="math inline">\(m\)</span> is nonlinear (e.g regression tree or a
+random forest) the predictions carry information beyond the linear
+terms, and the two sets of constraints become complementary: the
+auxiliary totals enforce internal consistency with published figures
+(benchmarking), while the model term injects the efficiency of the
+nonlinear fit. The hybrid is therefore meaningful precisely for the
+flexible learners that motivate it.</p>
+</div>
+<div id="equal-weights-within-a-household" class="section level2">
+<h2>Equal weights within a household</h2>
+<p>Like <code>step_calibrate()</code>, model calibration supports the
+integrative (Lemaitre-Dufour) option so that every member of a household
+carries the <strong>same</strong> final weight, keeping person and
+household estimates coherent. Pass <code>cluster</code> and
+<code>equal_within_cluster = TRUE</code>: the auxiliary and prediction
+blocks are summed to the household level, a single factor is solved per
+household, and that weight is assigned to all its members.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>fit_hh <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="fu">step_model_calibration</span>(</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>    <span class="at">x_formula  =</span> <span class="sc">~</span> sex <span class="sc">+</span> region,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>    <span class="at">models     =</span> <span class="fu">list</span>(<span class="at">income =</span> <span class="fu">y_model</span>(income <span class="sc">~</span> age <span class="sc">+</span> sex, <span class="at">engine =</span> <span class="st">&quot;glm&quot;</span>)),</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>    <span class="at">population  =</span> population,</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>    <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>, <span class="at">equal_within_cluster =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co"># the weight is constant within each household (checked over active members)</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>w <span class="ot">&lt;-</span> fit_hh<span class="sc">$</span>final_weight</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">tapply</span>(w[w <span class="sc">&gt;</span> <span class="dv">0</span>], sample_survey<span class="sc">$</span>household_id[w <span class="sc">&gt;</span> <span class="dv">0</span>],</span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>           <span class="cf">function</span>(x) <span class="fu">diff</span>(<span class="fu">range</span>(x))))</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>The X totals and the model-prediction total are still reproduced; the
+only added requirement is that the incoming weight be uniform within
+each cluster (as it is after the usual design and adjustment steps). The
+model-calibration solve is unbounded linear, so
+<code>calfun</code>/<code>bounds</code> do not apply here, but the
+one-weight-per- household behaviour is identical to that of
+<code>step_calibrate()</code>.</p>
+</div>
+<div id="relationship-to-the-literature" class="section level2">
+<h2>Relationship to the literature</h2>
+<p>Model calibration was introduced by Wu and Sitter (2001), who showed
+it handles any linear or nonlinear working model and reduces to the
+Deville-Sarndal calibration / GREG estimator in the linear case. Wu
+(2003) proved its optimality within a class of calibration estimators,
+and Montanari and Ranalli (2005) extended it to nonparametric models,
+close in spirit to the forest used here. Sarndal (2007) reviews the
+approach within the general calibration framework.</p>
+<p>Combining the model term with the ordinary consistency constraints is
+supported by the fact that calibration accommodates an arbitrary number
+of constraints; the practical motivation (efficiency from the model plus
+benchmarking to published totals) is standard. What is uncommon is a
+ready-to-use implementation: the major R survey packages calibrate on
+auxiliary totals (GREG, raking, post-stratification) but do not fit an
+outcome model and calibrate on its predictions, let alone with flexible
+engines combined with consistency constraints.
+<code>step_model_calibration()</code> packages exactly that. It is an
+accessible implementation of an established idea, not a new method.</p>
+<p><strong>References.</strong></p>
+<ul>
+<li><p>Wu &amp; Sitter (2001), <em>JASA</em> 96(453), 185–193.</p></li>
+<li><p>Wu (2003), <em>Biometrika</em> 90(4), 937–951.</p></li>
+<li><p>Montanari &amp; Ranalli (2005), <em>JASA</em> 100,
+1429–1442.</p></li>
+<li><p>Sarndal (2007), <em>Survey Methodology</em> 33(2),
+99–119.</p></li>
+<li><p>Deville &amp; Sarndal (1992), <em>JASA</em> 87(418),
+376–382.</p></li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

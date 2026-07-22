@@ -23,7 +23,8 @@ every member. Use this when unknown-eligibility units have no roster (one
 row per address) while resolved units are expanded by person.}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
 Redistributes the weight of unknown-eligibility cases among the

@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Staged survey weighting: the adjustment logic</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Staged survey weighting: the adjustment
+logic</h1>
+
+
+
+<p>Survey weights are the fundamental input used to produce population
+estimates from sample data. Let <span class="math inline">\(U={1,\ldots,N}\)</span> denote the target
+population and let <span class="math inline">\(y_i\)</span> be the value
+of a study variable for unit (<span class="math inline">\(i\)</span>). A
+common objective is to estimate finite population quantities such as the
+total</p>
+<p><span class="math display">\[Y=\sum_{i \in U} y_i, \]</span></p>
+<p>or functions derived from it (e.g., means, proportions, and ratios).
+Survey weighting provides the mechanism for translating information
+observed in the sample into estimates for these population
+quantities.</p>
+<p>The process starts from the sample design and then sequentially
+adjusts for the mechanisms that cause the realized sample to differ from
+the target population. Some adjustments aim to reduce potential
+selection biases in the effective sample (i.e., eligible responding
+units) by modeling mechanisms such as response propensities. Other
+adjustments incorporate auxiliary information to improve precision and
+ensure consistency with known population counts or totals through
+techniques such as calibration. Together, these steps transform the
+initial design weights into analysis weights suitable for population
+inference.</p>
+<p><code>weightflow</code> expresses the weighting process as a
+reproducible pipeline of explicit steps. Each step corresponds to a well
+defined adjustment, records how weights are modified, and passes its
+output to the next stage in the workflow. This vignette explains the
+purpose of each adjustment, the statistical reasoning behind it, and why
+the order of the steps matters.</p>
+<div id="the-starting-point-design-weights" class="section level2">
+<h2>The starting point: design weights</h2>
+<p>Under a probability design, unit <span class="math inline">\(i\)</span> enters the sample (<span class="math inline">\(s\)</span>) with a known inclusion probability
+<span class="math inline">\(\pi_i\)</span>. The design (base) weight is
+its inverse, <span class="math display">\[w_i^{0}
+=\frac{1}{\pi_i}\]</span></p>
+<p>Under ideal conditions, the Horvitz-Thompson estimator,</p>
+<p><span class="math display">\[\hat{Y}_{HT}=\sum_{i\in s}w_i^{0} \times
+y_i,\]</span></p>
+<p>is unbiased for the population total. These conditions include a
+sampling frame that perfectly covers the target population <span class="math inline">\(U\)</span>, correct inclusion probabilities, and
+complete response from all selected units. In practice, however, surveys
+rarely satisfy these assumptions. Frames may contain coverage errors,
+some sampled units may be found ineligible, and nonresponse typically
+reduces the effective sample. As a result, additional weighting
+adjustments are often required to mitigate potential biases and improve
+the quality of the resulting estimates.</p>
+<p>Every subsequent stage modifies the base weight through a
+multiplicative adjustment factor. The final analysis weight is therefore
+obtained as the product of all adjustment factors applied in sequence.
+We use the bundled multistage sample:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>dat <span class="ot">&lt;-</span> sample_one</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>dat<span class="sc">$</span>age_grp <span class="ot">&lt;-</span> <span class="fu">cut</span>(dat<span class="sc">$</span>age, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">30</span>, <span class="dv">45</span>, <span class="dv">60</span>, <span class="cn">Inf</span>),</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>                   <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">&quot;18-30&quot;</span>, <span class="st">&quot;31-45&quot;</span>, <span class="st">&quot;46-60&quot;</span>, <span class="st">&quot;60+&quot;</span>))</span></code></pre></div>
+</div>
+<div id="the-cascade" class="section level2">
+<h2>The cascade</h2>
+<p>Starting from the design weights, each stage addresses a specific
+departure from the ideal conditions under which design based estimators
+are unbiased. Some adjustments aim to reduce potential selection biases
+arising because the effective sample differs from the original
+probability sample. These adjustments often increase weight variability
+and, consequently, the standard errors of survey estimates. Other
+adjustments incorporate auxiliary information <span class="math inline">\(x\)</span> to improve efficiency and align
+estimates with known population totals. The weighting process therefore
+involves balancing bias reduction against variance inflation.</p>
+<div id="unknown-eligibility" class="section level3">
+<h3>Unknown eligibility</h3>
+<p>Some sampled units are never resolved, making it impossible to
+determine whether they belong to the target population. Ignoring them
+would implicitly assume they represent no population units, while
+treating them all as eligible would overestimate the target population
+size. The standard solution redistributes their weight among resolved
+cases (eligible and ineligible, i.e., out-of-scope units) within
+adjustment cells, allowing resolved units to represent the unresolved
+share. This adjustment seeks to reduce potential bias arising from
+unresolved cases, although the resulting increase in weight variability
+may inflate standard errors. When the unknowns arrive without a roster,
+this is done at the household level (<code>cluster</code>).</p>
+</div>
+<div id="ineligible-units" class="section level3">
+<h3>Ineligible units</h3>
+<p>Resolved out of scope units (e.g., vacant dwellings or non
+residential addresses) do not belong to the target population and
+therefore receive zero weight. They must remain in the data during the
+unknown eligibility adjustment so they absorb their share of unresolved
+cases before being removed. This step primarily ensures that estimation
+targets the correct population.</p>
+</div>
+<div id="within-household-selection" class="section level3">
+<h3>Within-household selection</h3>
+<p>When only one person is selected within a sampled household, that
+person must represent all eligible persons in the household. The weight
+is therefore multiplied by the inverse of the within household selection
+probability (<code>prob</code>) or, under equal probability selection,
+by the number of eligible persons (<code>n_eligible</code>). This
+adjustment restores the original selection probabilities implied by the
+sampling design.</p>
+</div>
+<div id="nonresponse" class="section level3">
+<h3>Nonresponse</h3>
+<p>Not all sampled units provide data. If respondents and nonrespondents
+differ systematically, estimates based only on respondents may be
+biased. Under the assumption that response is ignorable conditional on
+observed auxiliary variables, respondents are inflated to represent
+nonrespondents using weighting classes or response propensity models.
+These adjustments can substantially reduce nonresponse bias but
+typically increase weight variability and may lead to larger standard
+errors. They can be applied at either the household or person level. The
+<em>Nonresponse</em> article covers this stage in detail.</p>
+</div>
+<div id="calibration" class="section level3">
+<h3>Calibration</h3>
+<p>Finally, auxiliary information available for the entire population is
+used to align the weighted sample with known population totals. In this
+example, calibration forces agreement with known counts by region and
+sex. Besides improving consistency with external benchmarks, calibration
+can reduce coverage bias and increase precision when the calibration
+variables are associated with the survey outcomes. Unlike many
+nonresponse adjustments, calibration often reduces variance while
+simultaneously improving accuracy. From a design based perspective,
+calibration is closely related to the generalized regression (GREG)
+estimator. The Validation article shows that weightflow reproduces the
+calibration results obtained with the survey package.The
+<em>Validation</em> article shows weightflow’s calibration reproduces
+the <code>survey</code> package.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>fitted <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(dat, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>,</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>                           <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(<span class="at">ineligible =</span> ineligible) <span class="sc">|&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> hh_responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>  <span class="fu">step_select_within</span>(<span class="at">prob =</span> p_within) <span class="sc">|&gt;</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+</div>
+<div id="trimming-rounding-rescaling" class="section level3">
+<h3>Trimming, rounding, rescaling</h3>
+<p>Weighting adjustments can sometimes produce a small number of
+extremely large weights. While these weights may help reduce bias, they
+can substantially increase the variance of survey estimates and inflate
+design effects.</p>
+<p>Trimming limits extreme weights, typically by capping them and
+redistributing the excess weight among other units. This introduces a
+controlled amount of bias in exchange for potentially meaningful
+reductions in variance, a classic bias-variance trade-off in survey
+weighting (e.g., Potter, 1990).</p>
+<p>Rounding and rescaling serve different purposes. They do not alter
+the underlying adjustment logic but make weights easier to interpret,
+report, or use operationally. Common examples include integer weights,
+weights that sum to the sample size, or weights scaled to a known
+population total.</p>
+<p>A final consideration is the order of operations. Trimming performed
+after calibration generally preserves the overall weight total but may
+disturb the calibrated margins. For this reason, a rigorous workflow
+typically re-calibrates the weights after trimming to restore
+consistency with the auxiliary population totals.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>trimmed <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(dat, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                           <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(<span class="at">ineligible =</span> ineligible) <span class="sc">|&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> hh_responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="fu">step_select_within</span>(<span class="at">prob =</span> p_within) <span class="sc">|&gt;</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>() <span class="sc">|&gt;</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+</div>
+</div>
+<div id="reading-the-cascade-the-design-effect" class="section level2">
+<h2>Reading the cascade: the design effect</h2>
+<p>The Kish design effect,</p>
+<p><span class="math display">\[deff = 1 + CV^2,\]</span></p>
+<p>where <span class="math inline">\(CV\)</span> is the coefficient of
+variation of the weights, quantifies the variance inflation attributable
+to unequal weighting. An approximate effective sample size can be
+obtained as</p>
+<p><span class="math display">\[n_{eff} =
+\frac{n_{active}}{deff}.\]</span></p>
+<p>Many weighting adjustments, particularly those addressing
+eligibility, within household selection, and nonresponse, increase
+weight variability and therefore tend to increase the design effect.
+Calibration may either increase or decrease weight dispersion depending
+on the auxiliary information used and the calibration constraints.
+Trimming typically reduces the design effect by limiting extreme
+weights, trading a small amount of bias for a potentially substantial
+reduction in variance.</p>
+<p>The per stage summary provides a useful diagnostic of this process,
+showing how each adjustment modifies the weight distribution and how the
+cumulative weighting strategy affects both effective sample size and
+variance inflation:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">summary</span>(fitted)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; Data    : 417 cases</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility (by household_id)</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt;   2. drop ineligible</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;   3. nonresponse (weighting class, by household_id)</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   4. within-household selection</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   5. nonresponse (weighting class)</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   6. calibration (raking)</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;                             stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;                              base      417    2182  0.238     1.057   395</span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;  stage_1_step_unknown_eligibility      394    2182  0.234     1.055   374</span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;      stage_2_step_drop_ineligible      365    2023  0.232     1.054   346</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;          stage_3_step_nonresponse      315    2023  0.197     1.039   303</span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;        stage_4_step_select_within      315    4611  0.678     1.460   216</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt;          stage_5_step_nonresponse      209    4611  0.714     1.510   138</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt;            stage_6_step_calibrate      209    4495  0.740     1.548   135</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt; --- Step 1: unknown eligibility (by household_id) ---</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;   cell     level n_known n_unknown   factor</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;   East household      56         7 1.125000</span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;  North household     127         8 1.062992</span></span>
+<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;  South household      97         2 1.020619</span></span>
+<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;   West household     114         6 1.052632</span></span>
+<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.057 -&gt; 1.055   |   n_eff: 395 -&gt; 374</span></span>
+<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt; --- Step 2: drop ineligible ---</span></span>
+<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt;  n_dropped weight_dropped n_remaining</span></span>
+<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt;         29         159.22         365</span></span>
+<span id="cb4-40"><a href="#cb4-40" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.055 -&gt; 1.054   |   n_eff: 374 -&gt; 346</span></span>
+<span id="cb4-41"><a href="#cb4-41" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-42"><a href="#cb4-42" tabindex="-1"></a><span class="co">#&gt; --- Step 3: nonresponse (weighting class, by household_id) ---</span></span>
+<span id="cb4-43"><a href="#cb4-43" tabindex="-1"></a><span class="co">#&gt;   cell n_resp_hh n_nr_hh   factor</span></span>
+<span id="cb4-44"><a href="#cb4-44" tabindex="-1"></a><span class="co">#&gt;  North       105      11 1.104762</span></span>
+<span id="cb4-45"><a href="#cb4-45" tabindex="-1"></a><span class="co">#&gt;  South        79      13 1.164557</span></span>
+<span id="cb4-46"><a href="#cb4-46" tabindex="-1"></a><span class="co">#&gt;   East        46       8 1.173913</span></span>
+<span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a><span class="co">#&gt;   West        85      18 1.211765</span></span>
+<span id="cb4-48"><a href="#cb4-48" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.054 -&gt; 1.039   |   n_eff: 346 -&gt; 303</span></span>
+<span id="cb4-49"><a href="#cb4-49" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co">#&gt; --- Step 4: within-household selection ---</span></span>
+<span id="cb4-51"><a href="#cb4-51" tabindex="-1"></a><span class="co">#&gt;   using mean_factor min_factor max_factor</span></span>
+<span id="cb4-52"><a href="#cb4-52" tabindex="-1"></a><span class="co">#&gt;  1/prob        2.26          1      9.052</span></span>
+<span id="cb4-53"><a href="#cb4-53" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.039 -&gt; 1.460   |   n_eff: 303 -&gt; 216</span></span>
+<span id="cb4-54"><a href="#cb4-54" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-55"><a href="#cb4-55" tabindex="-1"></a><span class="co">#&gt; --- Step 5: nonresponse (weighting class) ---</span></span>
+<span id="cb4-56"><a href="#cb4-56" tabindex="-1"></a><span class="co">#&gt;               cell n_respondents n_nonresponse   factor</span></span>
+<span id="cb4-57"><a href="#cb4-57" tabindex="-1"></a><span class="co">#&gt;   East | F | 18-30             2             6 4.824394</span></span>
+<span id="cb4-58"><a href="#cb4-58" tabindex="-1"></a><span class="co">#&gt;   East | F | 31-45             5             0 1.000000</span></span>
+<span id="cb4-59"><a href="#cb4-59" tabindex="-1"></a><span class="co">#&gt;   East | F | 46-60             9             0 1.000000</span></span>
+<span id="cb4-60"><a href="#cb4-60" tabindex="-1"></a><span class="co">#&gt;     East | F | 60+             2             1 2.006549</span></span>
+<span id="cb4-61"><a href="#cb4-61" tabindex="-1"></a><span class="co">#&gt;   East | M | 18-30             2             2 3.308144</span></span>
+<span id="cb4-62"><a href="#cb4-62" tabindex="-1"></a><span class="co">#&gt;   East | M | 31-45             2             3 2.279092</span></span>
+<span id="cb4-63"><a href="#cb4-63" tabindex="-1"></a><span class="co">#&gt;   East | M | 46-60             6             1 1.167901</span></span>
+<span id="cb4-64"><a href="#cb4-64" tabindex="-1"></a><span class="co">#&gt;     East | M | 60+             4             1 1.114621</span></span>
+<span id="cb4-65"><a href="#cb4-65" tabindex="-1"></a><span class="co">#&gt;  North | F | 18-30             7             2 1.219400</span></span>
+<span id="cb4-66"><a href="#cb4-66" tabindex="-1"></a><span class="co">#&gt;  North | F | 31-45            12             7 1.436311</span></span>
+<span id="cb4-67"><a href="#cb4-67" tabindex="-1"></a><span class="co">#&gt;  North | F | 46-60            12             6 1.524781</span></span>
+<span id="cb4-68"><a href="#cb4-68" tabindex="-1"></a><span class="co">#&gt;    North | F | 60+             5             1 1.076659</span></span>
+<span id="cb4-69"><a href="#cb4-69" tabindex="-1"></a><span class="co">#&gt;  North | M | 18-30            12             4 1.253068</span></span>
+<span id="cb4-70"><a href="#cb4-70" tabindex="-1"></a><span class="co">#&gt;  North | M | 31-45             8             6 1.900951</span></span>
+<span id="cb4-71"><a href="#cb4-71" tabindex="-1"></a><span class="co">#&gt;  North | M | 46-60            10             4 1.230544</span></span>
+<span id="cb4-72"><a href="#cb4-72" tabindex="-1"></a><span class="co">#&gt;    North | M | 60+             9             0 1.000000</span></span>
+<span id="cb4-73"><a href="#cb4-73" tabindex="-1"></a><span class="co">#&gt;  South | F | 18-30             4             3 1.447426</span></span>
+<span id="cb4-74"><a href="#cb4-74" tabindex="-1"></a><span class="co">#&gt;  South | F | 31-45             4             4 2.076124</span></span>
+<span id="cb4-75"><a href="#cb4-75" tabindex="-1"></a><span class="co">#&gt;  South | F | 46-60             7             6 1.823142</span></span>
+<span id="cb4-76"><a href="#cb4-76" tabindex="-1"></a><span class="co">#&gt;    South | F | 60+             4             9 2.808928</span></span>
+<span id="cb4-77"><a href="#cb4-77" tabindex="-1"></a><span class="co">#&gt;  South | M | 18-30             4             4 1.848702</span></span>
+<span id="cb4-78"><a href="#cb4-78" tabindex="-1"></a><span class="co">#&gt;  South | M | 31-45             9             4 1.444650</span></span>
+<span id="cb4-79"><a href="#cb4-79" tabindex="-1"></a><span class="co">#&gt;  South | M | 46-60            12             3 1.360523</span></span>
+<span id="cb4-80"><a href="#cb4-80" tabindex="-1"></a><span class="co">#&gt;    South | M | 60+             2             0 1.000000</span></span>
+<span id="cb4-81"><a href="#cb4-81" tabindex="-1"></a><span class="co">#&gt;   West | F | 18-30             5             3 2.847808</span></span>
+<span id="cb4-82"><a href="#cb4-82" tabindex="-1"></a><span class="co">#&gt;   West | F | 31-45            14             7 1.547330</span></span>
+<span id="cb4-83"><a href="#cb4-83" tabindex="-1"></a><span class="co">#&gt;   West | F | 46-60             4             3 1.965820</span></span>
+<span id="cb4-84"><a href="#cb4-84" tabindex="-1"></a><span class="co">#&gt;     West | F | 60+             9             4 1.245591</span></span>
+<span id="cb4-85"><a href="#cb4-85" tabindex="-1"></a><span class="co">#&gt;   West | M | 18-30             5             5 2.197804</span></span>
+<span id="cb4-86"><a href="#cb4-86" tabindex="-1"></a><span class="co">#&gt;   West | M | 31-45            12             2 1.192805</span></span>
+<span id="cb4-87"><a href="#cb4-87" tabindex="-1"></a><span class="co">#&gt;   West | M | 46-60             3             3 2.005306</span></span>
+<span id="cb4-88"><a href="#cb4-88" tabindex="-1"></a><span class="co">#&gt;     West | M | 60+             4             2 1.499946</span></span>
+<span id="cb4-89"><a href="#cb4-89" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.460 -&gt; 1.510   |   n_eff: 216 -&gt; 138</span></span>
+<span id="cb4-90"><a href="#cb4-90" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-91"><a href="#cb4-91" tabindex="-1"></a><span class="co">#&gt; --- Step 6: calibration (raking) ---</span></span>
+<span id="cb4-92"><a href="#cb4-92" tabindex="-1"></a><span class="co">#&gt;  variable category target achieved</span></span>
+<span id="cb4-93"><a href="#cb4-93" tabindex="-1"></a><span class="co">#&gt;    region    North   1570     1570</span></span>
+<span id="cb4-94"><a href="#cb4-94" tabindex="-1"></a><span class="co">#&gt;    region    South   1250     1250</span></span>
+<span id="cb4-95"><a href="#cb4-95" tabindex="-1"></a><span class="co">#&gt;    region     East    927      927</span></span>
+<span id="cb4-96"><a href="#cb4-96" tabindex="-1"></a><span class="co">#&gt;    region     West    748      748</span></span>
+<span id="cb4-97"><a href="#cb4-97" tabindex="-1"></a><span class="co">#&gt;       sex        F   2311     2311</span></span>
+<span id="cb4-98"><a href="#cb4-98" tabindex="-1"></a><span class="co">#&gt;       sex        M   2184     2184</span></span>
+<span id="cb4-99"><a href="#cb4-99" tabindex="-1"></a><span class="co">#&gt; (converged/iterated in 4 iterations)</span></span>
+<span id="cb4-100"><a href="#cb4-100" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.510 -&gt; 1.548   |   n_eff: 138 -&gt; 135</span></span>
+<span id="cb4-101"><a href="#cb4-101" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-102"><a href="#cb4-102" tabindex="-1"></a><span class="co">#&gt; R-indicator (representativity of response): 0.802  (on region, sex, age_grp)</span></span></code></pre></div>
+<p>And the effect of trimming on the final design effect:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">no_trim =</span> <span class="fu">design_effect</span>(fitted<span class="sc">$</span>final_weight)<span class="sc">$</span>deff,</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">trimmed =</span> <span class="fu">design_effect</span>(trimmed<span class="sc">$</span>final_weight)<span class="sc">$</span>deff)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;  no_trim  trimmed </span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; 1.547642 1.499494</span></span></code></pre></div>
+</div>
+<div id="why-the-order-matters" class="section level2">
+<h2>Why the order matters</h2>
+<p>The sequence of weighting adjustments is not arbitrary. Each step
+defines the population, weights, and assumptions that underpin the next
+one.</p>
+<p>Unknown eligibility must be addressed before ineligible units are
+removed, so that resolved cases (including out of scope units) absorb
+their appropriate share of unresolved cases. Household nonresponse
+adjustments precede within household selection because a household must
+first be contacted before an individual can be selected and interviewed.
+Person level nonresponse adjustments naturally follow the within
+household selection step, since they operate on the set of sampled
+persons.</p>
+<p>Calibration is typically performed near the end of the process
+because it uses auxiliary information to align weights that already
+reflect eligibility, selection, and response mechanisms. If trimming is
+applied after calibration, a subsequent calibration step may be required
+to restore agreement with the population totals.</p>
+<p>In <strong>weightflow</strong>, this logic is made explicit through
+the weighting pipeline itself. The order of operations is the order in
+which the steps are applied, making the weighting process transparent,
+reproducible, and easy to audit. The contribution of each stage can be
+examined through <code>summary()</code>, <code>plot()</code>, and
+<code>report_weighting()</code>, which document how weights evolve
+across the cascade. For variance estimation methods that account for the
+full weighting process, see the <em>Variance estimation</em>
+article.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

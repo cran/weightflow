@@ -4,12 +4,15 @@
 \alias{y_model}
 \title{Specify a working model for a study variable y}
 \usage{
-y_model(formula, engine = c("glm", "tree", "forest"), family = NULL)
+y_model(formula, engine = c("glm", "tree", "forest", "boost"), family = NULL)
 }
 \arguments{
 \item{formula}{full formula, e.g. income ~ sex + age_g.}
 
-\item{engine}{"glm", "tree" (rpart) or "forest" (ranger).}
+\item{engine}{"glm", "tree" (rpart), "forest" (ranger) or "boost" (xgboost).
+The flexible learners run with fixed default settings (hyperparameters are
+not currently exposed): "tree"/"forest" use the 'rpart'/'ranger' defaults,
+and "boost" uses xgboost with nrounds = 150, max_depth = 4 and eta = 0.1.}
 
 \item{family}{for engine = "glm": "gaussian", "binomial" or "poisson".
 For tree/forest, regression vs classification is inferred from y.}

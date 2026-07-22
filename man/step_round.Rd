@@ -16,7 +16,8 @@ of weights). Note: "preserve_total" can break equality of weights within a
 cluster; if you need integer and equal weights per household, use "nearest".}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
 Optional step, typically the last one (after calibration). Simple rounding

@@ -13,7 +13,8 @@ step_drop_ineligible(spec, ineligible)
 condition (unquoted) that is TRUE for out-of-scope units.}
 }
 \value{
-The input \code{weighting_spec} with this step appended (for piping). The step is evaluated later by \code{prep()}.
+The input \code{weighting_spec} with this step appended to its recipe. The
+step is recorded only; it is evaluated when \code{prep()} is called.
 }
 \description{
 Sets the weight of known-ineligible units to zero so they leave the cascade

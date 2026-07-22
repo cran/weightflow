@@ -11,10 +11,11 @@ dat$age_grp <- cut(dat$age, c(0, 30, 45, 60, Inf),
                    labels = c("18-30", "31-45", "46-60", "60+"))
 
 spec <- weighting_spec(dat, base_weights = pw) |>
-  step_unknown_eligibility(unknown = unknown_elig, by = "region") |>
+  step_unknown_eligibility(unknown = unknown_elig, by = "region",
+                           cluster = "household_id") |>
   step_drop_ineligible(ineligible = ineligible) |>
   step_nonresponse(respondent = hh_responded, method = "weighting_class",
-                   by = "region") |>
+                   by = "region", cluster = "household_id") |>
   step_select_within(prob = p_within) |>
   step_nonresponse(respondent = responded, method = "weighting_class",
                    by = c("region", "sex", "age_grp")) |>
@@ -53,4 +54,11 @@ d_rep <- srvyr::as_survey_rep(df, weights = .weight,
                               type = "bootstrap", combined.weights = TRUE,
                               scale = 1 / attr(df, "R"), rscales = 1, mse = TRUE)
 srvyr::summarise(d_rep, mean_income = srvyr::survey_mean(income, na.rm = TRUE))
+
+## ----jackknife----------------------------------------------------------------
+jk <- jackknife_weights(spec, strata = "region", psu = "psu", progress = FALSE)
+jk
+
+jack_mean(jk,  "income")     # mean income, with the JKn variance
+jack_total(jk, "employed")   # total employed
 
