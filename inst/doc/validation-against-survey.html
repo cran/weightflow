@@ -635,6 +635,33 @@ tolerance.</p>
 <span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt; 6 Integrative (one weight per household)              7.869261e-13</span></span>
 <span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt; 7         Domain calibration (by region)              3.552714e-15</span></span></code></pre></div>
 </div>
+<div id="trimmed-calibration-matches-regenesees" class="section level2">
+<h2>Trimmed calibration matches ReGenesees</h2>
+<p>Range-restricted trimming of calibrated weights
+(<code>step_trim_calibrated()</code>) also agrees with an established
+reference: ReGenesees <code>trimcal()</code>. Both take absolute bounds
+on the final weight (weightflow <code>lower</code>/<code>upper</code>,
+ReGenesees <code>w.range</code>), trim to that range while preserving
+the calibration totals, and return the same solution. On a calibration
+to <code>~ sex + age</code> trimmed to a fixed interval, the two agree
+to machine precision (maximum absolute weight difference about 1e-8,
+correlation 1), with both preserving the population totals. The
+comparison is not run here because ReGenesees is not a dependency; the
+script <code>trim_calibrated_vs_regenesees.R</code> reproduces it.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="co"># weightflow</span></span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>w_wf <span class="ot">&lt;-</span> muestra <span class="sc">|&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="fu">weighting_spec</span>(<span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> sex <span class="sc">+</span> age, <span class="at">totals =</span> pop_tot) <span class="sc">|&gt;</span></span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> sex <span class="sc">+</span> age, <span class="at">lower =</span> lo, <span class="at">upper =</span> up, <span class="at">calfun =</span> <span class="st">&quot;linear&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>  <span class="fu">prep</span>() <span class="sc">|&gt;</span> <span class="fu">collect_weights</span>(<span class="at">drop_zero =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a><span class="co"># ReGenesees</span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a>des   <span class="ot">&lt;-</span> ReGenesees<span class="sc">::</span><span class="fu">e.svydesign</span>(<span class="at">data =</span> muestra, <span class="at">ids =</span> <span class="sc">~</span> id, <span class="at">weights =</span> <span class="sc">~</span> pw)</span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a>templ <span class="ot">&lt;-</span> ReGenesees<span class="sc">::</span><span class="fu">fill.template</span>(<span class="at">universe =</span> universo,</span>
+<span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a>           <span class="at">template =</span> ReGenesees<span class="sc">::</span><span class="fu">pop.template</span>(des, <span class="at">calmodel =</span> <span class="sc">~</span> sex <span class="sc">+</span> age))</span>
+<span id="cb13-12"><a href="#cb13-12" tabindex="-1"></a>cal   <span class="ot">&lt;-</span> ReGenesees<span class="sc">::</span><span class="fu">e.calibrate</span>(des, <span class="at">df.population =</span> templ, <span class="at">calfun =</span> <span class="st">&quot;linear&quot;</span>)</span>
+<span id="cb13-13"><a href="#cb13-13" tabindex="-1"></a>w_rg  <span class="ot">&lt;-</span> <span class="fu">weights</span>(ReGenesees<span class="sc">::</span><span class="fu">trimcal</span>(cal, <span class="at">w.range =</span> <span class="fu">c</span>(lo, up)))</span></code></pre></div>
+</div>
 <div id="what-weightflow-adds" class="section level2">
 <h2>What weightflow adds</h2>
 <p>The point of agreement is trust: where the methods overlap,

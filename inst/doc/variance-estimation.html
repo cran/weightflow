@@ -426,21 +426,21 @@ average squared deviation across the <span class="math inline">\(B\)</span> repl
 .\]</span></p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;income&quot;</span>)     <span class="co"># mean income</span></span>
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; 1 21615.21 872.7788 19904.59 23325.82</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; 1 21615.21 880.2396 19889.97 23340.45</span></span>
 <span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="fu">boot_total</span>(boot, <span class="st">&quot;employed&quot;</span>)   <span class="co"># total employed</span></span>
 <span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; 1 1927.219 140.9421 1650.978 2203.461</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; 1 1927.219 145.0374 1642.951 2211.487</span></span>
 <span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="fu">boot_mean</span>(boot,  <span class="st">&quot;employed&quot;</span>)   <span class="co"># employment rate</span></span>
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;    estimate         se  ci_lower  ci_upper</span></span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; 1 0.4287473 0.03102821 0.3679331 0.4895615</span></span></code></pre></div>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; 1 0.4287473 0.03211239 0.3658082 0.4916864</span></span></code></pre></div>
 <p>For any other statistic, pass a function of the weights and the data
 to <code>bootstrap_estimate()</code>:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">bootstrap_estimate</span>(boot, <span class="cf">function</span>(w, d) {</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  ok <span class="ot">&lt;-</span> <span class="sc">!</span><span class="fu">is.na</span>(d<span class="sc">$</span>income) <span class="sc">&amp;</span> w <span class="sc">&gt;</span> <span class="dv">0</span></span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  stats<span class="sc">::</span><span class="fu">median</span>(<span class="fu">rep</span>(d<span class="sc">$</span>income[ok], <span class="at">times =</span> <span class="fu">round</span>(w[ok])))   <span class="co"># weighted median (approx.)</span></span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>})</span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   estimate     se ci_lower ci_upper</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1    18136 930.15 16312.94 19959.06</span></span></code></pre></div>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   estimate       se ci_lower ci_upper</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1    18136 973.0253 16228.91 20043.09</span></span></code></pre></div>
 </div>
 </div>
 <div id="method-2-hand-the-weights-to-the-survey-package" class="section level2">
@@ -458,7 +458,7 @@ survey, feed it the bootstrap replicate weights from method 1:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>rep_des <span class="ot">&lt;-</span> <span class="fu">as_svrepdesign</span>(boot)</span>
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>survey<span class="sc">::</span><span class="fu">svymean</span>(<span class="sc">~</span>income, rep_des, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
 <span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;         mean     SE</span></span>
-<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; income 21615 872.78</span></span></code></pre></div>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; income 21615 880.24</span></span></code></pre></div>
 <p>This matches <code>boot_mean(boot, &quot;income&quot;)</code> exactly, because
 <code>as_svrepdesign()</code> sets <code>scale = 1 / B</code>,
 <code>rscales = 1</code> and <code>mse = TRUE</code>.</p>
@@ -477,7 +477,7 @@ survey, feed it the bootstrap replicate weights from method 1:</p>
 <span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 2</span></span>
 <span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   mean_income mean_income_se</span></span>
 <span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;         &lt;dbl&gt;          &lt;dbl&gt;</span></span>
-<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; 1      21615.           873.</span></span></code></pre></div>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; 1      21615.           880.</span></span></code></pre></div>
 </div>
 <div id="method-3-a-delete-a-psu-jackknife-that-re-applies-the-recipe" class="section level2">
 <h2>Method 3: a delete-a-PSU jackknife that re-applies the recipe</h2>
@@ -507,6 +507,21 @@ exactly. As with the bootstrap, the replicate weights bridge to
 survey/srvyr through <code>as_svrepdesign(jk)</code>, so any estimand or
 domain can be estimated downstream with the recipe’s uncertainty built
 in.</p>
+<div id="lonely-psus-and-parallel-replicates" class="section level3">
+<h3>Lonely PSUs and parallel replicates</h3>
+<p>Strata with a single PSU carry no within-stratum resampling
+information. By default (<code>lonely_psu = &quot;certainty&quot;</code>) they are
+treated as self-representing and contribute no variance (a warning is
+issued). Setting <code>lonely_psu = &quot;collapse&quot;</code> merges the
+single-PSU strata into a pseudo-stratum so they are resampled and yield
+a conservative variance instead of zero.</p>
+<p>Both <code>bootstrap_weights()</code> and
+<code>jackknife_weights()</code> also take <code>cores</code>: with
+<code>cores &gt; 1</code> the per-replicate re-preps run in parallel
+(forking, so serial on Windows). The resampling is drawn up front from
+<code>seed</code>, so the parallel run is identical to the serial
+one.</p>
+</div>
 </div>
 <div id="which-one-to-use" class="section level2">
 <h2>Which one to use</h2>

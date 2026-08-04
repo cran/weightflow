@@ -419,7 +419,7 @@ The step’s diagnostics show target versus achieved:</p>
 <span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; regionEast   regionEast X (consistency)      927      927</span></span>
 <span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; regionWest   regionWest X (consistency)      748      748</span></span>
 <span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; sexM               sexM X (consistency)     2184     2184</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; income           income       y (model) 91993682 91993682</span></span></code></pre></div>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; income           income       y (model) 91733354 91733354</span></span></code></pre></div>
 <p>The <code>X (consistency)</code> rows are the region and sex totals;
 the <code>y (model)</code> row is the population total of the forest
 predictions. Each <code>achieved</code> equals its
@@ -435,7 +435,7 @@ total:</p>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="fu">c</span>(<span class="at">estimated =</span> est_total, <span class="at">population =</span> true_total,</span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">rel_error =</span> (est_total <span class="sc">-</span> true_total) <span class="sc">/</span> true_total)</span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;    estimated   population    rel_error </span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 8.997765e+07 8.674501e+07 3.726604e-02</span></span></code></pre></div>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 8.994216e+07 8.674501e+07 3.685691e-02</span></span></code></pre></div>
 <p>The estimator stays design-based, <span class="math inline">\(\hat
 Y_{\mathrm{mc}} = \sum_{i \in s} w_i\,y_i\)</span>; the model only
 shapes the weights to make it efficient. A poor model does not bias the

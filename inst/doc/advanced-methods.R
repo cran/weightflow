@@ -74,3 +74,28 @@ trimmed_potter <- base |>
 trimmed_tukey$steps[[6]]$diagnostics[, c("method", "upper", "n_capped")]
 trimmed_potter$steps[[6]]$diagnostics[, c("method", "upper", "n_capped")]
 
+## ----trimcal------------------------------------------------------------------
+recipe <- base |>
+  step_nonresponse(respondent = responded, method = "weighting_class",
+                   by = c("region", "sex")) |>
+  step_calibrate(method = "raking",
+                 margins = list(region = c(table(population$region))))
+
+pre <- prep(recipe)
+w   <- collect_weights(pre, drop_zero = FALSE)$.weight
+w   <- w[w > 0]
+lo  <- as.numeric(quantile(w, 0.05)); up <- as.numeric(quantile(w, 0.95))
+
+trimmed <- recipe |>
+  step_trim_calibrated(~ region, lower = lo, upper = up) |>
+  prep()
+
+## ----trimcal-check------------------------------------------------------------
+Xr     <- model.matrix(~ region, sample_one)
+w_cal  <- collect_weights(pre, drop_zero = FALSE)$.weight
+w_trim <- trimmed$final_weight
+round(rbind(after_calibration = colSums(w_cal  * Xr),
+            after_trim        = colSums(w_trim * Xr),
+            difference        = colSums((w_trim - w_cal) * Xr)), 6)
+range(w_trim[w_trim > 0])
+

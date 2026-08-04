@@ -72,8 +72,16 @@
 # construction). With bounds, linear/raking are clamped (truncated distance).
 .calib_ds <- function(X, d, Tvec, calfun = "linear", bounds = NULL,
                       maxit = 100L, tol = 1e-7) {
-  L <- if (is.null(bounds)) -Inf else bounds[1]
-  U <- if (is.null(bounds)) Inf  else bounds[2]
+  # `bounds` may be a length-2 vector c(L, U) (global, the usual case) or an
+  # n x 2 matrix of per-unit bounds cbind(L_k, U_k) (used by trimmed
+  # calibration, where the absolute-weight bound w in [w_l, w_u] becomes a
+  # per-unit factor bound). L and U then broadcast element-wise below.
+  if (is.matrix(bounds)) {
+    L <- bounds[, 1]; U <- bounds[, 2]
+  } else {
+    L <- if (is.null(bounds)) -Inf else bounds[1]
+    U <- if (is.null(bounds)) Inf  else bounds[2]
+  }
   CLZ <- 500                                # clamp for exp() to avoid overflow
 
   if (calfun == "logit") {
@@ -128,6 +136,28 @@
   out
 }
 
+# Shared linear/GREG calibration solver core. Given a design matrix `Z`, weights
+# `v` and targets `Tvec`, return the g factors so that
+#   sum_i v_i * g_i * Z_i = Tvec.
+# Closed form for plain linear (calfun = "linear", no bounds, optional ridge
+# `penalty`); the Deville-Sarndal iterative solver for the "raking"/"logit"
+# distances or explicit `bounds`. Used by both step_calibrate (Z = X or the
+# household means Xbar) and the calibration flavours of step_nonresponse
+# (Z = respondents' auxiliaries). Returns list(g, converged).
+.solve_calibration <- function(Z, v, Tvec, calfun = "linear", bounds = NULL,
+                               penalty = NULL, maxit = 100L) {
+  use_ds <- calfun != "linear" || !is.null(bounds)
+  if (!use_ds) {
+    cn <- colnames(Z)
+    A  <- t(Z) %*% (v * Z)
+    if (!is.null(penalty)) A <- A + .ridge_diag(penalty, cn, A)
+    lambda <- .solve_calib(A, Tvec - colSums(v * Z))
+    return(list(g = as.numeric(1 + Z %*% lambda), converged = TRUE))
+  }
+  g <- .calib_ds(Z, v, Tvec, calfun, bounds, maxit)
+  list(g = as.numeric(g), converged = isTRUE(attr(g, "converged")))
+}
+
 
 # Fit an xgboost model and return predictions on a list of newdata frames.
 # Handles both regression (objective "reg:squarederror") and binary
@@ -173,8 +203,15 @@
 # `fit_predict(train_idx, newdata_idx_list)` must fit on rows `train_idx` and
 # return a list of prediction vectors, one per element of `newdata_idx_list`.
 .crossfit_predict <- function(n, K, cluster_id = NULL, seed = NULL, fit_predict) {
-  if (!is.null(seed)) { old <- .Random.seed; on.exit({.Random.seed <<- old});
-                        set.seed(seed) }
+  if (!is.null(seed)) {
+    if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      old <- get(".Random.seed", envir = globalenv())
+      on.exit(assign(".Random.seed", old, envir = globalenv()))
+    } else {
+      on.exit(rm(".Random.seed", envir = globalenv()))   # was unset (fresh session)
+    }
+    set.seed(seed)
+  }
   if (is.null(cluster_id)) {
     fold <- sample(rep_len(seq_len(K), n))
   } else {                                   # assign whole clusters to folds
@@ -442,7 +479,9 @@ apply_step.step_select_within <- function(step, data, w) {
     if (is.null(step$formula)) stop("method = 'propensity' requires `formula`.")
     ddh    <- data[idx_el[match(hhn, cl)], , drop = FALSE]   # one row per household
     ddh$.y <- as.integer(resp_h)
-    p      <- .estimate_propensity(step$engine, step$formula, ddh, Wh,
+    mw     <- if (is.null(step$weight_model) || isTRUE(step$weight_model)) Wh
+              else rep(1, length(Wh))
+    p      <- .estimate_propensity(step$engine, step$formula, ddh, mw,
                                    crossfit = step$crossfit, seed = step$crossfit_seed)
     if (is.null(step$num_classes)) {
       factor_h <- ifelse(resp_h, 1 / p, 0)
@@ -488,10 +527,111 @@ apply_step.step_drop_ineligible <- function(step, data, w) {
 }
 
 # --- Nonresponse -----------------------------------------------------------
+# Calibration approach to nonresponse (two-phase; Lundstrom & Sarndal 1999,
+# Sarndal & Lundstrom 2005; Estevao & Sarndal 2002 for the two-phase case).
+# Calibrate the respondents' weights so the weighted auxiliaries reproduce either
+# the R+NR design-weighted totals at this stage (totals = NULL: the sample-level /
+# two-phase target, which by construction coincides with the pre-nonresponse
+# cascade estimate) or supplied population totals. Nonrespondents get weight 0.
+# The sample-level target is computed INSIDE the step from the incoming weights,
+# so the recipe-aware bootstrap/jackknife recomputes it on each replicate and the
+# two-phase variance is captured automatically.
+.nonresponse_calibrate <- function(step, data, w, respondent, eligible) {
+  new_w    <- w
+  elig_idx <- which(eligible)
+  dd       <- data[eligible, , drop = FALSE]
+  Xall     <- stats::model.matrix(step$formula, data = dd)
+  if (nrow(Xall) != length(elig_idx) || anyNA(Xall))
+    stop("Auxiliaries in `formula` have missing values in the eligible sample. ",
+         "Sample-level nonresponse calibration requires them observed for both ",
+         "respondents and nonrespondents.")
+  cn     <- colnames(Xall)
+  resp_e <- as.logical(respondent[eligible])
+  if (!any(resp_e)) stop("No eligible respondents to calibrate.")
+
+  # --- target: sample-level (R+NR) or population ---
+  if (is.null(step$totals)) {
+    Tvec <- colSums(w[eligible] * Xall)          # R + NR with incoming weights
+    tlab <- "sample-level"
+  } else {
+    totvec <- if (is.list(step$totals) && !is.data.frame(step$totals))
+                .prep_linear_totals(step$formula, step$totals, step$count, data, eligible)
+              else step$totals
+    if (!setequal(names(totvec), cn))
+      stop("`totals` names must match the model.matrix columns: ",
+           paste(cn, collapse = ", "))
+    Tvec <- as.numeric(totvec[cn]); tlab <- "population"
+  }
+
+  # --- solve on respondents only, drop nonrespondents ---
+  Xr  <- Xall[resp_e, , drop = FALSE]
+  dr  <- w[eligible][resp_e]
+  if (!step$equal_within_cluster) {
+    # unit-level: one calibration factor per responding unit
+    sol <- .solve_calibration(Xr, dr, Tvec, step$calfun, step$bounds,
+                              step$penalty, step$maxit)
+    g   <- sol$g
+    new_w[elig_idx[resp_e]] <- dr * g
+    note_clust <- ""
+  } else {
+    # integrative (Lemaitre-Dufour): one weight per cluster among the
+    # respondents. Replace each responding unit's auxiliaries by the mean over
+    # its responding household members and calibrate at unit level, so all
+    # responding members of a household share one calibration factor.
+    if (!step$cluster %in% names(data))
+      stop(sprintf("Cluster column '%s' not found in the data.", step$cluster))
+    clr <- as.character(data[[step$cluster]])[eligible][resp_e]
+    if (anyNA(clr))
+      stop(sprintf("Cluster column '%s' has missing values (NA).", step$cluster))
+    hh   <- unique(clr)
+    n_h  <- as.numeric(tapply(dr, clr, length)[hh])          # responding members
+    Wsum <- as.numeric(tapply(dr, clr, sum)[hh])             # base weight in household
+    Xbar <- rowsum(Xr, group = clr)[hh, , drop = FALSE] / n_h  # household MEANS
+    sol  <- .solve_calibration(Xbar, Wsum, Tvec, step$calfun, step$bounds,
+                               step$penalty, step$maxit)
+    gh   <- sol$g; names(gh) <- hh
+    g    <- gh
+    new_w[elig_idx[resp_e]] <- dr * gh[clr]                  # own weight x household factor
+    note_clust <- sprintf("; one weight per '%s' (integrative)", step$cluster)
+  }
+  new_w[elig_idx[!resp_e]] <- 0
+
+  # --- diagnostics (same conventions as step_calibrate) ---
+  achieved  <- colSums(new_w[elig_idx[resp_e]] * Xr)
+  truncated <- !is.null(step$bounds) || step$calfun == "logit"
+  conv_ok   <- sol$converged
+  if (is.null(step$penalty) && !truncated) {
+    rel_dev <- abs(achieved - Tvec) / (abs(Tvec) + 1)
+    if (any(rel_dev > 1e-6)) {
+      conv_ok <- FALSE
+      warning(sprintf(paste0("Nonresponse calibration did not fully satisfy the ",
+                             "constraints (max relative deviation = %.2e)."),
+                      max(rel_dev)), call. = FALSE)
+    }
+  }
+  diag <- data.frame(variable = cn, target = Tvec, achieved = round(achieved, 2),
+                     stringsAsFactors = FALSE)
+  if (!is.null(step$penalty)) diag$deviation <- round(achieved - Tvec, 2)
+  attr(diag, "converged") <- conv_ok
+  bnote <- if (step$calfun != "linear" || !is.null(step$bounds))
+    sprintf(" [calfun = %s%s]", step$calfun,
+            if (!is.null(step$bounds)) sprintf(", bounds (%.2f, %.2f)",
+                                               step$bounds[1], step$bounds[2]) else "")
+  else ""
+  rnote <- if (!is.null(step$penalty)) " [ridge: constraints relaxed, not exact]" else ""
+  attr(diag, "note") <- sprintf(
+    "nonresponse calibration to %s totals; g in [%.3f, %.3f]%s%s%s",
+    tlab, min(g), max(g), bnote, rnote, note_clust)
+  list(weights = new_w, diagnostics = diag)
+}
+
 apply_step.step_nonresponse <- function(step, data, w) {
   n          <- length(w)
   respondent <- .eval_cond(step$respondent, data)
   eligible   <- w > 0                    # reach this stage alive
+
+  if (step$method == "calibration")      # calibration approach (two-phase)
+    return(.nonresponse_calibrate(step, data, w, respondent, eligible))
 
   if (!is.null(step$cluster))
     return(.nonresponse_cluster(step, data, w, respondent, eligible))
@@ -527,7 +667,9 @@ apply_step.step_nonresponse <- function(step, data, w) {
   dd      <- data[eligible, , drop = FALSE]
   dd$.y   <- as.integer(respondent[eligible])
   cl_cf   <- if (!is.null(step$cluster)) as.character(data[[step$cluster]][eligible]) else NULL
-  p       <- .estimate_propensity(step$engine, step$formula, dd, w[eligible],
+  mw      <- if (is.null(step$weight_model) || isTRUE(step$weight_model)) w[eligible]
+             else rep(1, sum(eligible))
+  p       <- .estimate_propensity(step$engine, step$formula, dd, mw,
                                   crossfit = step$crossfit, cluster_id = cl_cf,
                                   seed = step$crossfit_seed)
   idx_el  <- which(eligible)
@@ -689,15 +831,10 @@ apply_step.step_calibrate <- function(step, data, w) {
     ds_converged <- TRUE
     if (!step$equal_within_cluster) {
       # --- unit-level ---
-      if (!use_ds) {
-        A <- t(X) %*% (d * X)
-        if (!is.null(step$penalty)) A <- A + .ridge_diag(step$penalty, cn, A)
-        lambda <- .solve_calib(A, Tvec - colSums(d * X))
-        g      <- as.numeric(1 + X %*% lambda)
-      } else {
-        g <- .calib_ds(X, d, Tvec, step$calfun, step$bounds, step$maxit)
-        ds_converged <- isTRUE(attr(g, "converged"))
-      }
+      sol <- .solve_calibration(X, d, Tvec, step$calfun, step$bounds,
+                                step$penalty, step$maxit)
+      g            <- sol$g
+      ds_converged <- sol$converged
       new_w[active] <- d * g
       note_clust <- ""
 
@@ -712,20 +849,16 @@ apply_step.step_calibrate <- function(step, data, w) {
       # and calibrate at the person level, so all members share one weight. The
       # per-household mass is the household's total base weight (sum over persons),
       # i.e. the penalty scales with household size. This matches survey's
-      # aggregate.stage (Vanderhoeft 2001), ReGenesees and Statistics Canada's GES.
+      # aggregate.stage (Vanderhoeft 2001), to machine precision. (ReGenesees
+      # implements a different integrative variant, so it need not agree.)
       hh   <- unique(cl)
       n_h  <- as.numeric(tapply(d, cl, length)[hh])       # persons per household
       Wsum <- as.numeric(tapply(d, cl, sum)[hh])          # total base weight in household
       Xbar <- rowsum(X, group = cl)[hh, , drop = FALSE] / n_h   # household MEANS
-      if (!use_ds) {
-        A <- t(Xbar) %*% (Wsum * Xbar)
-        if (!is.null(step$penalty)) A <- A + .ridge_diag(step$penalty, cn, A)
-        lambda <- .solve_calib(A, Tvec - colSums(Wsum * Xbar))
-        gh     <- as.numeric(1 + Xbar %*% lambda)
-      } else {
-        gh <- .calib_ds(Xbar, Wsum, Tvec, step$calfun, step$bounds, step$maxit)
-        ds_converged <- isTRUE(attr(gh, "converged"))
-      }
+      sol  <- .solve_calibration(Xbar, Wsum, Tvec, step$calfun, step$bounds,
+                                 step$penalty, step$maxit)
+      gh           <- sol$g
+      ds_converged <- sol$converged
       names(gh) <- hh
       new_w[active] <- d * gh[cl]          # each person: own base weight x household g-factor
       g          <- gh
@@ -758,6 +891,7 @@ apply_step.step_calibrate <- function(step, data, w) {
     if (!is.null(step$penalty))
       diag$deviation <- round(achieved - Tvec, 2)
     attr(diag, "converged") <- conv_ok
+    attr(diag, "reconcile") <- attr(totvec, "reconcile")
     bnote <- if (use_ds)
       sprintf(" [calfun = %s%s]", step$calfun,
               if (!is.null(step$bounds)) sprintf(", bounds (%.2f, %.2f)",
@@ -1008,7 +1142,7 @@ apply_step.step_model_calibration <- function(step, data, w) {
   } else {
     # Integrative calibration (Lemaitre-Dufour 1987): household-MEAN replacement,
     # person-level calibration -> one weight per household (matches survey's
-    # aggregate.stage / Vanderhoeft 2001, ReGenesees and Statistics Canada's GES).
+    # aggregate.stage / Vanderhoeft 2001; ReGenesees uses a different variant).
     if (!step$cluster %in% names(data))
       stop(sprintf("Cluster column '%s' not found in the data.", step$cluster))
     cl <- as.character(data[[step$cluster]])[active]
@@ -1103,8 +1237,8 @@ apply_step.step_assert <- function(step, data, w) {
 }
 
 apply_step.step_trim_weights <- function(step, data, w) {
-  active <- w > 0
-  new_w  <- w
+  active <- w != 0          # trim every non-zero weight (incl. negatives from
+  new_w  <- w               # unbounded calibration); leave dropped units (w == 0)
   wv     <- new_w[active]
 
   upper <- step$upper
@@ -1119,20 +1253,40 @@ apply_step.step_trim_weights <- function(step, data, w) {
   lower <- step$lower
 
   it <- 0L
-  repeat {
-    it    <- it + 1L
-    over  <- wv > upper
-    under <- wv < lower
-    if (!any(over) && !any(under)) break
-    if (it > step$maxit) break
-    # net weight removed by clamping (high trimmed minus low raised)
-    net <- sum(wv[over] - upper) - sum(lower - wv[under])
-    wv[over]  <- upper
-    wv[under] <- lower
-    free <- wv < upper & wv > lower
-    if (abs(net) > 1e-12 && any(free))            # redistribute to preserve total
-      wv[free] <- wv[free] + net * wv[free] / sum(wv[free])
-    if (!step$strict) break
+  if (identical(step$redistribute, "uniform")) {
+    # survey::trimWeights scheme: share the trimmed mass EQUALLY among the
+    # untrimmed units, and never reuse a unit that has already been trimmed.
+    has_trimmed <- rep(FALSE, length(wv))
+    repeat {
+      it      <- it + 1L
+      outside <- wv < lower | wv > upper
+      if (!any(outside) || it > step$maxit) break
+      wvnew     <- pmin(pmax(wv, lower), upper)
+      trimmings <- wv - wvnew
+      can_trim  <- !outside & !has_trimmed
+      if (any(can_trim))
+        wvnew[can_trim] <- wvnew[can_trim] + sum(trimmings) / sum(can_trim)
+      has_trimmed <- outside | has_trimmed
+      wv <- wvnew
+      if (!step$strict) break
+    }
+  } else {
+    # proportional (default): share the trimmed mass in proportion to weights.
+    repeat {
+      it    <- it + 1L
+      over  <- wv > upper
+      under <- wv < lower
+      if (!any(over) && !any(under)) break
+      if (it > step$maxit) break
+      # net weight removed by clamping (high trimmed minus low raised)
+      net <- sum(wv[over] - upper) - sum(lower - wv[under])
+      wv[over]  <- upper
+      wv[under] <- lower
+      free <- wv < upper & wv > lower
+      if (abs(net) > 1e-12 && any(free))          # redistribute to preserve total
+        wv[free] <- wv[free] + net * wv[free] / sum(wv[free])
+      if (!step$strict) break
+    }
   }
   new_w[active] <- wv
 
@@ -1144,6 +1298,104 @@ apply_step.step_trim_weights <- function(step, data, w) {
     stringsAsFactors = FALSE
   )
   attr(diag, "iterations") <- it
+  list(weights = new_w, diagnostics = diag)
+}
+
+# --- Trimmed (range-restricted) calibration --------------------------------
+# Trim the incoming (calibration) weights to an absolute interval [lower, upper]
+# WHILE PRESERVING the calibration totals of `formula`. This is not a clip: it is
+# a bounded re-calibration (Folsom & Singh 2000, GEM). The targets to preserve
+# are the totals the incoming weights already achieve
+# (T = sum_k w_k x_k), and the absolute-weight bound w_k in [lower, upper] is
+# imposed as a per-unit factor bound f_k = w_k^new / w_k in [lower/w_k, upper/w_k]
+# on top of the incoming weights, using the range-restricted Euclidean distance
+# (calfun = "linear", the default) or the multiplicative one ("raking").
+# Units within range and not needed to restore the totals stay put (f_k ~ 1);
+# out-of-range units saturate at their bound and the rest move minimally.
+apply_step.step_trim_calibrated <- function(step, data, w) {
+  active <- w > 0                      # only positive calibration weights
+  if (!any(active)) return(list(weights = w, diagnostics = NULL))
+  new_w <- w
+  d     <- w[active]                   # incoming weights = base for this step
+
+  dd <- data[active, , drop = FALSE]
+  X  <- stats::model.matrix(step$formula, data = dd)
+  if (nrow(X) != length(d) || anyNA(X))
+    stop("Auxiliaries in `formula` have missing values in the active sample; ",
+         "trimmed calibration needs them observed for every unit being trimmed.")
+  cn <- colnames(X)
+
+  # Totals to PRESERVE: the ones the incoming weights already reproduce.
+  Tvec <- colSums(d * X)
+
+  lower <- if (is.null(step$lower)) -Inf else step$lower
+  upper <- if (is.null(step$upper))  Inf else step$upper
+  if (lower >= upper)
+    stop("`lower` must be strictly below `upper`.")
+  n_below <- sum(d < lower)
+  n_above <- sum(d > upper)
+
+  # Absolute-weight bound -> factor bound. Always bounded, so go straight to the
+  # Deville-Sarndal iterative solver (honouring this step's own maxit/tol).
+  if (!step$equal_within_cluster) {
+    # unit level: per-unit factor bound f_k in [lower/w_k, upper/w_k]
+    bnd  <- cbind(lower / d, upper / d)
+    gsol <- .calib_ds(X, d, Tvec, calfun = step$calfun, bounds = bnd,
+                      maxit = step$maxit, tol = step$tol)
+    f    <- as.numeric(gsol)
+    note_clust <- ""
+  } else {
+    # integrative: one factor per cluster (Lemaitre-Dufour household means). The
+    # incoming weights are constant within household, so the person-weight bound
+    # w = d*f in [lower, upper] becomes a per-household factor bound on the common
+    # household weight d_h = Wsum_h / n_h.
+    if (!step$cluster %in% names(data))
+      stop(sprintf("Cluster column '%s' not found in the data.", step$cluster))
+    cl <- as.character(data[[step$cluster]])[active]
+    if (anyNA(cl))
+      stop(sprintf("Cluster column '%s' has missing values (NA).", step$cluster))
+    hh    <- unique(cl)
+    n_h   <- as.numeric(tapply(d, cl, length)[hh])
+    Wsum  <- as.numeric(tapply(d, cl, sum)[hh])
+    Xbar  <- rowsum(X, group = cl)[hh, , drop = FALSE] / n_h
+    d_h   <- Wsum / n_h                                  # common household weight
+    bnd_h <- cbind(lower / d_h, upper / d_h)
+    gsol  <- .calib_ds(Xbar, Wsum, Tvec, calfun = step$calfun, bounds = bnd_h,
+                       maxit = step$maxit, tol = step$tol)
+    fh    <- as.numeric(gsol); names(fh) <- hh
+    f     <- fh[cl]
+    note_clust <- sprintf("; one factor per '%s' (integrative)", step$cluster)
+  }
+  new_w[active] <- d * f
+
+  # --- diagnostics ---
+  wa       <- new_w[active]
+  achieved <- colSums(wa * X)
+  rel_dev  <- abs(achieved - Tvec) / (abs(Tvec) + 1)
+  conv_ok  <- isTRUE(attr(gsol, "converged")) && max(rel_dev) <= 1e-6
+  if (!conv_ok)
+    warning(sprintf(paste0("Trimmed calibration could not both stay within ",
+      "[%s, %s] and preserve every total (max relative deviation = %.2e). ",
+      "The range may be infeasible; widen the bounds or relax the constraints."),
+      format(lower), format(upper), max(rel_dev)), call. = FALSE)
+  fin         <- c(lower, upper); fin <- fin[is.finite(fin)]
+  tolb        <- 1e-6 * max(abs(fin), 1)          # scale from the finite bound(s)
+  n_at_lower  <- if (is.finite(lower)) sum(abs(wa - lower) <= tolb) else 0L
+  n_at_upper  <- if (is.finite(upper)) sum(abs(wa - upper) <= tolb) else 0L
+  diag <- data.frame(variable = cn, target = round(Tvec, 2),
+                     achieved = round(achieved, 2), stringsAsFactors = FALSE)
+  attr(diag, "converged") <- conv_ok
+  attr(diag, "note") <- sprintf(
+    paste0("trimmed calibration to [%s, %s] (calfun = %s); %d weights raised to ",
+           "lower, %d capped at upper; f (adjustment) in [%.3f, %.3f]%s"),
+    format(lower), format(upper), step$calfun, n_at_lower, n_at_upper,
+    min(f), max(f), note_clust)
+  attr(diag, "trim") <- data.frame(
+    lower = lower, upper = upper, calfun = step$calfun,
+    n_below_before = n_below, n_above_before = n_above,
+    n_at_lower = n_at_lower, n_at_upper = n_at_upper,
+    sum_before = round(sum(d), 2), sum_after = round(sum(wa), 2),
+    stringsAsFactors = FALSE)
   list(weights = new_w, diagnostics = diag)
 }
 
@@ -1192,6 +1444,42 @@ apply_step.step_rescale <- function(step, data, w) {
 #   - Rule 1: cells in the sample but not in `totals` -> error (conceptual)
 #   - Rule 2: cells in `totals` but not in the sample -> warning, calibrate anyway
 # Returns list(cells, vars, sample_key, note).
+# =========================================================================
+# Reconcile tidy control totals that do not all sum to the same N
+# =========================================================================
+# When the tidy margins/totals do not sum to a common population size N, keep
+# the LARGEST as the reference and rescale the others proportionally. Only the
+# internal distribution of each margin matters to raking/GREG, so proportional
+# rescaling lets the tidy interface always CLOSE (instead of erroring or, for
+# raking, failing to converge). The adjustment is reported so the user can
+# review the control totals. `Ns` is a named numeric vector (one N per margin).
+# Returns list(target, factors, note); note is NULL when the Ns already agree.
+.reconcile_margin_N <- function(Ns) {
+  Ns <- Ns[!is.na(Ns)]
+  if (is.null(names(Ns)))
+    names(Ns) <- paste("margin", seq_along(Ns))
+  target  <- max(Ns)
+  factors <- target / Ns
+  changed <- which(abs(Ns - target) > 1e-9 * target)
+  note <- NULL
+  if (length(changed) > 0L) {
+    lead   <- names(Ns)[which.max(Ns)]
+    detail <- paste(sprintf("'%s' %s -> %s (x%.4f)",
+                            names(Ns)[changed],
+                            format(round(Ns[changed]), big.mark = ","),
+                            format(round(target),      big.mark = ","),
+                            factors[changed]),
+                    collapse = "; ")
+    note <- sprintf(paste0(
+      "The control totals did not all sum to the same population size. ",
+      "Kept the largest, N = %s (from '%s'), and rescaled the others so the ",
+      "calibration closes: %s. Each margin's internal distribution is preserved; ",
+      "review the control totals if this difference was not expected."),
+      format(round(target), big.mark = ","), lead, detail)
+  }
+  list(target = target, factors = factors, note = note)
+}
+
 .prep_poststrata <- function(totals, count, data, active) {
 
   totals <- as.data.frame(totals, stringsAsFactors = FALSE)
@@ -1330,14 +1618,12 @@ apply_step.step_rescale <- function(step, data, w) {
   new_w <- w
 
   Ns <- vapply(margins_prep, function(m) sum(m$cells$.Freq), numeric(1))
-  if (length(Ns) > 1L && diff(range(Ns)) > tol * max(Ns)) {
-    warning(sprintf(
-      paste0("The margin totals do not all sum to the same population size ",
-             "(margin Ns: %s). Raking may not converge; each margin should sum ",
-             "to the same N."),
-      paste(format(round(Ns), big.mark = ","), collapse = ", ")),
-      call. = FALSE)
-  }
+  names(Ns) <- vapply(margins_prep, function(m) paste(m$vars, collapse = " x "),
+                      character(1))
+  rec <- .reconcile_margin_N(Ns)
+  if (!is.null(rec$note)) message(rec$note)     # informative, never fatal (warn=2)
+  for (i in seq_along(margins_prep))          # rescale each margin to the common N
+    margins_prep[[i]]$cells$.Freq <- margins_prep[[i]]$cells$.Freq * rec$factors[i]
 
   it <- 0L; maxdiff <- Inf
   while (it < maxit && maxdiff >= tol) {
@@ -1386,6 +1672,7 @@ apply_step.step_rescale <- function(step, data, w) {
   diag <- do.call(rbind, diag)
   attr(diag, "iterations") <- it
   attr(diag, "converged")  <- (maxdiff < tol)
+  if (!is.null(rec$note)) attr(diag, "reconcile") <- rec$note
   list(weights = new_w, diagnostics = diag)
 }
 
@@ -1424,20 +1711,17 @@ apply_step.step_rescale <- function(step, data, w) {
   X  <- stats::model.matrix(formula, data = data[active, , drop = FALSE])
   cn <- colnames(X)
 
-  # population size N from any categorical margin (they must agree)
+  # population size N: if the categorical margins disagree, reconcile them to
+  # the LARGEST (the intercept is that N; each margin is rescaled below).
   Ns <- vapply(totals, function(t) {
     if (is.data.frame(t)) sum(as.numeric(t[[count]])) else NA_real_
   }, numeric(1))
-  Ns <- Ns[!is.na(Ns)]
-  if (length(Ns) == 0L)
+  if (all(is.na(Ns)))
     stop(paste0("At least one categorical target (a data frame) is required to ",
                 "determine the population size N for the intercept."))
-  if (diff(range(Ns)) > 1e-6 * max(Ns))
-    warning(sprintf(
-      "Categorical margins do not all sum to the same N (%s). Using the first.",
-      paste(format(round(Ns), big.mark = ","), collapse = ", ")),
-      call. = FALSE)
-  N <- Ns[1]
+  rec <- .reconcile_margin_N(Ns[!is.na(Ns)])
+  if (!is.null(rec$note)) message(rec$note)     # informative, never fatal (warn=2)
+  N <- rec$target
 
   Tvec <- stats::setNames(rep(NA_real_, length(cn)), cn)
   if ("(Intercept)" %in% cn) Tvec["(Intercept)"] <- N
@@ -1453,7 +1737,8 @@ apply_step.step_rescale <- function(step, data, w) {
         stop(sprintf(paste0("The totals data frame for '%s' must have exactly ",
                             "one category column plus the counts column."), v))
       levels_v <- as.character(t[[lev_col]])
-      counts_v <- as.numeric(t[[count]])
+      sc       <- if (!is.null(rec$factors[[v]])) rec$factors[[v]] else 1
+      counts_v <- as.numeric(t[[count]]) * sc
       for (j in seq_along(levels_v)) {
         col <- paste0(v, levels_v[j])
         if (col %in% cn) Tvec[col] <- counts_v[j]
@@ -1479,5 +1764,6 @@ apply_step.step_rescale <- function(step, data, w) {
              "(all categories for factors, a number for continuous)."),
       paste(missing, collapse = ", ")))
 
+  if (!is.null(rec$note)) attr(Tvec, "reconcile") <- rec$note
   Tvec
 }

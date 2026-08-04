@@ -7,14 +7,23 @@
 step_nonresponse(
   spec,
   respondent,
-  method = c("weighting_class", "propensity"),
+  method = c("weighting_class", "propensity", "calibration"),
   by = NULL,
   formula = NULL,
   engine = c("logit", "tree", "forest", "boost"),
+  weight_model = TRUE,
   num_classes = 5L,
   cluster = NULL,
   crossfit = NULL,
-  crossfit_seed = NULL
+  crossfit_seed = NULL,
+  totals = NULL,
+  count = NULL,
+  calfun = c("linear", "logit", "raking"),
+  bounds = NULL,
+  penalty = NULL,
+  equal_within_cluster = FALSE,
+  maxit = 50L,
+  tol = 1e-06
 )
 }
 \arguments{
@@ -24,7 +33,9 @@ step_nonresponse(
 (unquoted) TRUE for respondents. Eligible cases that are not respondents
 are treated as nonresponse.}
 
-\item{method}{"weighting_class" (cells) or "propensity" (predictive model).}
+\item{method}{"weighting_class" (cells), "propensity" (predictive model) or
+"calibration" (calibrate the respondents to auxiliary totals; two-phase /
+Sarndal-Lundstrom).}
 
 \item{by}{character. Adjustment cells for method = "weighting_class".}
 
@@ -40,6 +51,14 @@ settings and their hyperparameters are not currently exposed: "tree" and
 "forest" use the 'rpart' and 'ranger' defaults, and "boost" uses xgboost
 with nrounds = 150, max_depth = 4 and eta = 0.1.}
 
+\item{weight_model}{logical. Only for method = "propensity": whether to fit
+the response-propensity model with the incoming weights (\code{TRUE},
+the default) or unweighted (\code{FALSE}). Fitting unweighted can reduce the
+variance of the propensity estimates when the weights are unrelated to
+response given the model covariates, at the cost of possible bias if they
+are (Little & Vartivarian 2003). The 1/p (or class) adjustment always uses
+the design weights; only the model fit is affected.}
+
 \item{num_classes}{integer or NULL. Controls how propensities are used:
 an integer forms that many propensity classes (cell adjustment within each
 class); NULL applies the direct factor 1/p to each unit.}
@@ -52,7 +71,10 @@ the cells, and in "propensity" the model is fitted with one row per
 household (household auxiliaries), predicting the household response. The
 resulting factor is assigned to every member; nonresponding households go to
 zero. As always, only active units (weight > 0) take part, so units already
-dropped (unknown eligibility, ineligible) are excluded automatically.}
+dropped (unknown eligibility, ineligible) are excluded automatically. For
+\code{method = "calibration"}, \code{cluster} is used together with
+\code{equal_within_cluster = TRUE} for integrative (one weight per household)
+calibration.}
 
 \item{crossfit}{integer or NULL. If given (number of folds K >= 2), the
 propensity is estimated by K-fold cross-fitting: for each fold the model is
@@ -64,6 +86,33 @@ correlated units stay together). NULL (default) fits and predicts in-sample.}
 
 \item{crossfit_seed}{integer or NULL. Seed for reproducible fold assignment
 when \code{crossfit} is used.}
+
+\item{totals}{(method = "calibration") calibration targets. NULL (default)
+calibrates the respondents to the R+NR design-weighted totals of \code{formula}
+at that stage (the two-phase / sample-level case; Sarndal & Lundstrom 2005);
+a named vector or a tidy \code{totals}/\code{count} input (as in \code{step_calibrate()})
+calibrates to population totals instead.}
+
+\item{count}{(method = "calibration", tidy \code{totals}) string naming the counts
+column of the totals data frame(s).}
+
+\item{calfun}{(method = "calibration") distance function for the calibration
+factor: "linear", "raking" or "logit", as in \code{step_calibrate(method = "linear")}.}
+
+\item{bounds}{(method = "calibration") numeric c(L, U) with L < 1 < U. Bounds
+on the calibration factor, to keep the nonresponse factors positive.}
+
+\item{penalty}{(method = "calibration", unbounded) NULL or positive cost(s)
+for ridge (penalized) calibration.}
+
+\item{equal_within_cluster}{(method = "calibration") logical. If TRUE,
+integrative (Lemaitre-Dufour) nonresponse calibration: the responding
+members of a household (\code{cluster}) share a single calibration factor, so
+the adjustment keeps the weights constant within household. Requires
+\code{cluster}. FALSE (default) calibrates each responding unit on its own.}
+
+\item{maxit, tol}{(method = "calibration") convergence control for the bounded
+or exponential-distance calibration solver.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -72,9 +121,11 @@ step is recorded only; it is evaluated when \code{prep()} is called.
 \description{
 Inflates the weights of respondents to represent the nonrespondents, under the
 assumption that response is ignorable given the information used. The response
-propensity can be estimated by weighting classes (cells) or by a model
+propensity can be estimated by weighting classes (cells), by a model
 ("propensity"), with engines ranging from logistic regression to machine
-learning (regression tree, random forest, gradient boosting). Optional
+learning (regression tree, random forest, gradient boosting), or the
+adjustment can be made by calibrating the respondents to auxiliary totals
+("calibration", the two-phase / Sarndal-Lundstrom approach). Optional
 K-fold cross-fitting estimates the propensity out-of-sample to avoid the
 overfitting that flexible engines can introduce. The adjustment can be applied
 at the person or, via \code{cluster}, the household level.
@@ -106,4 +157,12 @@ if (requireNamespace("xgboost", quietly = TRUE)) {
     prep()
 }
 }
+
+# nonresponse by calibration (two-phase): calibrate the respondents to the
+# R+NR design-weighted totals of the auxiliaries at that stage, so their
+# estimates reproduce the pre-nonresponse ones (Sarndal & Lundstrom 2005)
+weighting_spec(sample_survey, base_weights = pw) |>
+  step_nonresponse(respondent = responded, method = "calibration",
+                   formula = ~ region + sex) |>
+  prep()
 }

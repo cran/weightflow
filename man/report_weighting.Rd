@@ -4,7 +4,17 @@
 \alias{report_weighting}
 \title{Build a nice HTML report of the weighting recipe}
 \usage{
-report_weighting(object, file = NULL, open = TRUE, plots = TRUE)
+report_weighting(
+  object,
+  file = NULL,
+  open = TRUE,
+  plots = TRUE,
+  narrative = TRUE,
+  lang = c("en", "es"),
+  metadata = NULL,
+  replicates = NULL,
+  domains = NULL
+)
 }
 \arguments{
 \item{object}{a prepped object (output of prep()).}
@@ -15,6 +25,33 @@ report_weighting(object, file = NULL, open = TRUE, plots = TRUE)
 
 \item{plots}{logical; add per-step plots (weight before-vs-after scatter and
 adjustment-factor histogram). Uses ggplot2 if installed, else base graphics.}
+
+\item{narrative}{logical; add an auto-generated methodological narrative -- an
+executive summary at the top and a natural-language paragraph on each step
+explaining what was done and why (built from the step's own parameters and
+diagnostics), in the spirit of a GSBPM / ESQRS methodological report.}
+
+\item{lang}{language of the narrative: "en" (default) or "es".}
+
+\item{metadata}{optional named list of reference metadata (SIMS / ESMS
+concepts) shown as a header card, e.g. \code{survey}, \code{reference_period},
+\code{geography}, \code{producer}, \code{author}, \code{contact}, \code{frame}, \code{totals_source},
+\code{totals_date}, \code{version}, \code{confidentiality}, \code{notes}. Recognised keys get a
+proper label; any other key is shown as given. \code{survey} is also woven into
+the executive summary. \code{totals_source}/\code{totals_date} document where the
+calibration control totals come from and their reference date.}
+
+\item{replicates}{optional \code{weightflow_boot} or \code{weightflow_jack} object
+(from \code{bootstrap_weights()} / \code{jackknife_weights()}). If given, a
+"Replication design for variance" card documents the method, number of
+replicates, strata / PSU structure, lonely-PSU handling, seed, cores and
+run time, and warns when few PSUs per stratum favour JKn.}
+
+\item{domains}{optional one-sided formula of grouping variables for a
+per-domain reliability card. Each term becomes one table (\code{+} = separate
+tables, \code{:} = crossed), showing the active n, sum of weights, CV, Kish
+design effect and effective sample size within each domain. E.g.
+\code{domains = ~ region + region:sex}.}
 }
 \value{
 (invisibly) the path to the HTML file.

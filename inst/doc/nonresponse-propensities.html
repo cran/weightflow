@@ -12,7 +12,7 @@
 
 
 
-<title>Nonresponse: weighting classes and propensities</title>
+<title>Nonresponse: weighting classes, propensities and calibration</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -337,8 +337,8 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 
-<h1 class="title toc-ignore">Nonresponse: weighting classes and
-propensities</h1>
+<h1 class="title toc-ignore">Nonresponse: weighting classes,
+propensities and calibration</h1>
 
 
 
@@ -524,7 +524,7 @@ smallest.</p>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>                   <span class="at">num_classes =</span> <span class="dv">5</span>) <span class="sc">|&gt;</span></span>
 <span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="fu">design_effect</span>(wf<span class="sc">$</span>final_weight)<span class="sc">$</span>deff</span>
-<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; [1] 1.154265</span></span></code></pre></div>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; [1] 1.149559</span></span></code></pre></div>
 </div>
 <div id="flexibility-overfitting-and-cross-fitting" class="section level3">
 <h3>Flexibility, overfitting, and cross-fitting</h3>
@@ -553,6 +553,28 @@ article develops the boosting engine and cross-fitting in full, with a
 worked comparison of the design effect with and without
 cross-fitting.</p>
 </div>
+<div id="weighting-the-propensity-model" class="section level3">
+<h3>Weighting the propensity model</h3>
+<p>By default the propensity model is fitted using the weights that
+enter the step, that is, the base design weights or the weights already
+adjusted by earlier steps in the cascade (unknown eligibility, an
+earlier nonresponse stage). Setting <code>weight_model = FALSE</code>
+fits it unweighted, so those incoming weights enter only the <span class="math inline">\(1/\hat\phi_i\)</span> adjustment and not the model
+fit. Fitting unweighted can lower the variance of the propensity
+estimates when the incoming weights are unrelated to response given the
+covariates, at the cost of possible bias if they are related (Little and
+Vartivarian 2003). Only the model fit changes; the adjustment always
+uses the incoming weights.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>f <span class="ot">&lt;-</span> <span class="cf">function</span>(wm) <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;propensity&quot;</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                   <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex <span class="sc">+</span> age, <span class="at">engine =</span> <span class="st">&quot;logit&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>                   <span class="at">num_classes =</span> <span class="cn">NULL</span>, <span class="at">weight_model =</span> wm) <span class="sc">|&gt;</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">c</span>(<span class="at">weighted   =</span> <span class="fu">design_effect</span>(<span class="fu">f</span>(<span class="cn">TRUE</span>)<span class="sc">$</span>final_weight)<span class="sc">$</span>deff,</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="at">unweighted =</span> <span class="fu">design_effect</span>(<span class="fu">f</span>(<span class="cn">FALSE</span>)<span class="sc">$</span>final_weight)<span class="sc">$</span>deff)</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   weighted unweighted </span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   1.021551   1.022794</span></span></code></pre></div>
+</div>
 </div>
 <div id="person-or-household-level" class="section level2">
 <h2>Person or household level</h2>
@@ -562,18 +584,87 @@ reached). The <code>cluster</code> argument moves the adjustment to the
 household: each household counts once with its weight, and the
 redistribution (or the propensity model) is done over households, then
 assigned to their members.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">design_effect</span>(wf<span class="sc">$</span>final_weight)<span class="sc">$</span>deff</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; [1] 1.06383</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="st">&quot;region&quot;</span>, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="fu">design_effect</span>(wf<span class="sc">$</span>final_weight)<span class="sc">$</span>deff</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; [1] 1.06383</span></span></code></pre></div>
 <p>The level is dictated by what is known about the nonrespondents:
 household auxiliaries and a whole-household outcome call for
 <code>cluster</code>; person-level auxiliaries within reached households
 do not. Note that the effective sample size drops more at the household
 level, since households (not persons) are the independent units being
 adjusted.</p>
+</div>
+<div id="nonresponse-by-calibration" class="section level2">
+<h2>Nonresponse by calibration</h2>
+<p>A third route calibrates the respondents’ weights so that, over the
+auxiliaries, they reproduce the totals the active units (respondents and
+nonrespondents) carried before the step. With
+<code>method = &quot;calibration&quot;</code> and <code>totals = NULL</code> (the
+default) the targets are those incoming, design-weighted totals, so the
+adjustment is the two-phase, sample-level calibration estimator (Sarndal
+and Lundstrom 2005): the calibrated respondent estimates reproduce the
+pre-nonresponse cascade estimates exactly. Supply <code>totals</code> to
+calibrate to external population totals instead.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;calibration&quot;</span>,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>                   <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex) <span class="sc">|&gt;</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="fu">summary</span>(wf)</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; Data    : 467 cases</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (calibration: linear, sample-level)</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt;                     stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt;                      base      467    4371  0.236     1.056   442</span></span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="co">#&gt;  stage_1_step_nonresponse      270    4371  0.146     1.021   264</span></span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt; --- Step 1: nonresponse (calibration: linear, sample-level) ---</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt;     variable    target achieved</span></span>
+<span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a><span class="co">#&gt;  (Intercept) 4370.8333  4370.83</span></span>
+<span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a><span class="co">#&gt;  regionSouth 1210.0000  1210.00</span></span>
+<span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a><span class="co">#&gt;   regionEast  800.0000   800.00</span></span>
+<span id="cb9-28"><a href="#cb9-28" tabindex="-1"></a><span class="co">#&gt;   regionWest  873.3333   873.33</span></span>
+<span id="cb9-29"><a href="#cb9-29" tabindex="-1"></a><span class="co">#&gt;         sexM 2284.1667  2284.17</span></span>
+<span id="cb9-30"><a href="#cb9-30" tabindex="-1"></a><span class="co">#&gt; nonresponse calibration to sample-level totals; g in [1.491, 1.950] </span></span>
+<span id="cb9-31"><a href="#cb9-31" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.056 -&gt; 1.021   |   n_eff: 442 -&gt; 264</span></span>
+<span id="cb9-32"><a href="#cb9-32" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-33"><a href="#cb9-33" tabindex="-1"></a><span class="co">#&gt; R-indicator (representativity of response): 0.890  (on region, sex)</span></span></code></pre></div>
+<p>Validation. The respondents, reweighted, reproduce the auxiliary
+totals of all active units before the step:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>X      <span class="ot">&lt;-</span> <span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, sample_survey)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>resp   <span class="ot">&lt;-</span> sample_survey<span class="sc">$</span>responded <span class="sc">==</span> <span class="dv">1</span></span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>before <span class="ot">&lt;-</span> <span class="fu">colSums</span>(sample_survey<span class="sc">$</span>pw <span class="sc">*</span> X)               <span class="co"># respondents + nonrespondents</span></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>after  <span class="ot">&lt;-</span> <span class="fu">colSums</span>(wf<span class="sc">$</span>final_weight[resp] <span class="sc">*</span> X[resp, ])  <span class="co"># respondents, calibrated</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">rbind</span>(before, after, <span class="at">diff =</span> after <span class="sc">-</span> before), <span class="dv">4</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt;        (Intercept) regionSouth regionEast regionWest     sexM</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt; before    4370.833        1210        800   873.3333 2284.167</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt; after     4370.833        1210        800   873.3333 2284.167</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt; diff         0.000           0          0     0.0000    0.000</span></span></code></pre></div>
+<p>The distance (<code>calfun</code>), <code>bounds</code> and ridge
+<code>penalty</code> carry over from <code>step_calibrate()</code>. With
+<code>equal_within_cluster = TRUE</code> and a <code>cluster</code> the
+adjustment is integrative: the responding members of a household share
+one calibration factor, so the weights stay constant within
+household.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>wf <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;calibration&quot;</span>,</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>                   <span class="at">formula =</span> <span class="sc">~</span> region, <span class="at">cluster =</span> <span class="st">&quot;household_id&quot;</span>,</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>                   <span class="at">equal_within_cluster =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="fu">design_effect</span>(wf<span class="sc">$</span>final_weight)<span class="sc">$</span>deff</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt; [1] 1.020774</span></span></code></pre></div>
 </div>
 <div id="which-to-use" class="section level2">
 <h2>Which to use</h2>

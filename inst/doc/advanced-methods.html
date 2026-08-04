@@ -544,6 +544,58 @@ the smallest estimated MSE.</p>
 fixed, conservative rule, while Potter searches for the cutoff that
 minimizes estimated MSE, often more aggressive, capping a few more
 weights when that lowers the overall error.</p>
+<div id="redistributing-the-trimmed-mass" class="section level3">
+<h3>Redistributing the trimmed mass</h3>
+<p>The weight removed by capping is shared among the untrimmed units.
+With <code>redistribute = &quot;proportional&quot;</code> (the default) they keep
+their relative sizes; with <code>redistribute = &quot;uniform&quot;</code> each
+untrimmed unit receives the same amount, which reproduces
+<code>survey::trimWeights()</code> exactly.</p>
+</div>
+</div>
+<div id="calibration-preserving-trimming" class="section level2">
+<h2>Calibration-preserving trimming</h2>
+<p><code>step_trim_weights()</code> caps extreme weights and
+redistributes the excess, which breaks any calibration the recipe had
+achieved. <code>step_trim_calibrated()</code> instead trims the
+already-calibrated weights into an absolute interval
+<code>[lower, upper]</code> while preserving the calibration totals (a
+bounded re-calibration, the generalized exponential method of Folsom and
+Singh 2000). Weights inside the interval stay put; out-of-range ones
+saturate at their bound and the rest move minimally so that every total
+is still met.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>recipe <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region))))</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>pre <span class="ot">&lt;-</span> <span class="fu">prep</span>(recipe)</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>w   <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(pre, <span class="at">drop_zero =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>.weight</span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>w   <span class="ot">&lt;-</span> w[w <span class="sc">&gt;</span> <span class="dv">0</span>]</span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>lo  <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.05</span>)); up <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.95</span>))</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>trimmed <span class="ot">&lt;-</span> recipe <span class="sc">|&gt;</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region, <span class="at">lower =</span> lo, <span class="at">upper =</span> up) <span class="sc">|&gt;</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<p>The region totals are still met after the trim (the differences are
+zero), whereas the weights now sit inside the interval:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>Xr     <span class="ot">&lt;-</span> <span class="fu">model.matrix</span>(<span class="sc">~</span> region, sample_one)</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>w_cal  <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(pre, <span class="at">drop_zero =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>.weight</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>w_trim <span class="ot">&lt;-</span> trimmed<span class="sc">$</span>final_weight</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">rbind</span>(<span class="at">after_calibration =</span> <span class="fu">colSums</span>(w_cal  <span class="sc">*</span> Xr),</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>            <span class="at">after_trim        =</span> <span class="fu">colSums</span>(w_trim <span class="sc">*</span> Xr),</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>            <span class="at">difference        =</span> <span class="fu">colSums</span>((w_trim <span class="sc">-</span> w_cal) <span class="sc">*</span> Xr)), <span class="dv">6</span>)</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt;                   (Intercept) regionSouth regionEast regionWest</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; after_calibration        4495        1250        927        748</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; after_trim               4495        1250        927        748</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; difference                  0           0          0          0</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="fu">range</span>(w_trim[w_trim <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; [1]  6.649002 50.461100</span></span></code></pre></div>
+<p>With <code>equal_within_cluster = TRUE</code> and a
+<code>cluster</code>, the trimming is integrative: one factor per
+household, so weights that were constant within household stay
+constant.</p>
 </div>
 <div id="putting-it-together" class="section level2">
 <h2>Putting it together</h2>

@@ -202,3 +202,18 @@ est
 data.frame(method = names(agree), `max abs weight difference` = unname(agree),
            check.names = FALSE, row.names = NULL)
 
+## ----trimcal-regenesees, eval = FALSE-----------------------------------------
+# # weightflow
+# w_wf <- muestra |>
+#   weighting_spec(base_weights = pw) |>
+#   step_calibrate(method = "linear", formula = ~ sex + age, totals = pop_tot) |>
+#   step_trim_calibrated(~ sex + age, lower = lo, upper = up, calfun = "linear") |>
+#   prep() |> collect_weights(drop_zero = FALSE)
+# 
+# # ReGenesees
+# des   <- ReGenesees::e.svydesign(data = muestra, ids = ~ id, weights = ~ pw)
+# templ <- ReGenesees::fill.template(universe = universo,
+#            template = ReGenesees::pop.template(des, calmodel = ~ sex + age))
+# cal   <- ReGenesees::e.calibrate(des, df.population = templ, calfun = "linear")
+# w_rg  <- weights(ReGenesees::trimcal(cal, w.range = c(lo, up)))
+
