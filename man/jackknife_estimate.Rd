@@ -27,11 +27,25 @@ A data frame with \code{estimate}, \code{se}, \code{ci_lower}, \code{ci_upper}.
 }
 \description{
 Applies a statistic to the point weights and to every delete-a-PSU replicate,
-and summarises it with the stratified jackknife (JKn) variance
-\deqn{\sum_h \frac{n_h - 1}{n_h} \sum_{i \in h} (\theta_{(hi)} - \bar\theta_h)^2,}
-where \eqn{\theta_{(hi)}} is the estimate with PSU \eqn{i} of stratum \eqn{h}
-deleted and \eqn{\bar\theta_h} the mean of those over the stratum. No finite
-population correction is applied.
+and returns the estimate with its stratified jackknife (JKn) standard error and
+a normal confidence interval. \code{jack_total()} and \code{jack_mean()} are the
+shortcuts for a weighted total and a weighted mean of one column.
+}
+\details{
+The stratified (JKn) variance sums each stratum's delete-a-PSU spread,
+\deqn{\widehat V_{JK} = \sum_h \frac{n_h - 1}{n_h}\sum_{i \in h}\big(\hat\theta_{(hi)} - \hat\theta_h\big)^2,}{V_JK = sum_h (n_h - 1)/n_h * sum_(i in h) (theta_(hi) - theta_h)^2,}
+with \eqn{\hat\theta_{(hi)}}{theta_(hi)} the estimate with PSU \eqn{i}{i} of
+stratum \eqn{h}{h} deleted and \eqn{\hat\theta_h}{theta_h} their within-stratum
+mean; the unstratified JK1 uses a single stratum. No finite population
+correction is applied.
+}
+\note{
+\code{jack_total()} / \code{jack_mean()} center the replicate deviations on the
+per-stratum mean of the deleted-PSU estimates (the standard JKn). The
+\code{survey} design built by \code{as_svrepdesign()} instead uses \code{mse = TRUE}, which
+centers on the point estimate. Both are legitimate, so the standard errors
+from \code{jack_total()} and from \code{svytotal()} on the same object can differ
+slightly.
 }
 \examples{
 spec <- weighting_spec(sample_one, base_weights = pw) |>

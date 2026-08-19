@@ -5,6 +5,12 @@
 
 #' Diagnostic plots for the weights
 #'
+#' Draws the weighting cascade: one histogram of the adjustment factor per step,
+#' plus a four-panel summary of the final weights, the cumulative factor, base
+#' against final weight, and the design effect by stage. Base graphics only, no
+#' dependencies. Use it after [prep()] to see *how* the weights moved, where
+#' [summary()][summary.prepped_weighting_spec()] tells you *by how much*.
+#'
 #' @param x a prepped object (output of prep()).
 #' @param type "all" (default): per-step adjustment-factor histograms PLUS the
 #'   summary panel (final weights, cumulative factor, base vs final, deff by
@@ -22,11 +28,11 @@ plot.prepped_weighting_spec <- function(x, type = c("all", "factors", "summary")
   type   <- match.arg(type)
   h      <- x$history
   ns     <- length(x$steps)
-  base_w <- h[["base"]]; fin_w <- x$final_weight; act <- fin_w > 0
+  base_w <- h[["base"]]; fin_w <- x$final_weight; act <- .wf_active(fin_w)
 
   # Per-step factor histogram (weight after / before, among survivors)
   draw_factor <- function(i) {
-    prev <- h[[i]]; cur <- h[[i + 1L]]; keep <- cur > 0 & prev > 0
+    prev <- h[[i]]; cur <- h[[i + 1L]]; keep <- .wf_active(cur) & .wf_active(prev)
     graphics::hist(cur[keep] / prev[keep], breaks = 30, col = "grey80",
                    border = "white", main = x$steps[[i]]$label,
                    xlab = "weight after / before", cex.main = 0.9)
@@ -66,8 +72,10 @@ plot.prepped_weighting_spec <- function(x, type = c("all", "factors", "summary")
 
 #' Per-unit adjustment factors table
 #'
-#' Returns a data.frame with the weight at each stage and the factor of each
-#' step (stage weight / previous-stage weight), handy for custom plots.
+#' Unrolls the cascade into a `data.frame`: the weight of every unit at every
+#' stage, plus the factor each step applied to it. This is the tidy form of
+#' `prep()`'s `$history`, and the starting point for any diagnostic that
+#' [plot()][plot.prepped_weighting_spec()] does not already draw.
 #'
 #' @param object a prepped object (output of prep()).
 #' @return data.frame with one weight column per stage and one factor per step.
@@ -82,9 +90,9 @@ weight_factors <- function(object) {
   h   <- object$history
   out <- as.data.frame(h, check.names = FALSE)
   nm  <- names(h)
-  for (i in 2:length(h)) {
+  for (i in seq_along(h)[-1]) {          # empty when the recipe has 0 steps (length(h) == 1)
     prev <- h[[i - 1]]
-    out[[paste0("factor_", nm[i])]] <- ifelse(prev > 0, h[[i]] / prev, NA_real_)
+    out[[paste0("factor_", nm[i])]] <- ifelse(.wf_active(prev), h[[i]] / prev, NA_real_)
   }
   out
 }

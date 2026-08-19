@@ -1,3 +1,21 @@
+# weightflow 1.1.0
+
+## New features
+
+* **Diagnostics report suite.** `report_weighting()` gains a per-step card reading the bias-variance trade-off of each adjustment, with quality alerts for trimming, calibration, machine-learning propensity models and nonresponse-by-calibration.
+* **Honest variance for machine-learning adjustments.** A flexible learner (tree / forest / boost) run without `crossfit` now raises an alert, since same-sample predictions can understate the variance even under recipe-aware replication; the `ranger` seed is fixed so the forest's noise no longer enters the replicates.
+* **`collect_replicate_weights()` also exports delete-a-PSU jackknife objects**, with the `type` / `scale` / `rscales` needed by `survey` / `srvyr` (first argument renamed `boot` -> `object`).
+* **Iterative recipe refinement.** Adding a step to a prepped recipe clears the results with a message and re-runs the cascade on the next `prep()`, so stale weights cannot be read by accident.
+* **Per-subgroup trimming.** `step_trim_calibrated()` gains a `by` argument and per-group `lower` / `upper` bounds (requested by ECLAC).
+* **`collect_propensities()`** recovers the per-unit response propensities fitted by a `step_nonresponse(method = "propensity")` step from a prepped recipe, so their distribution can be inspected before the adjusted weights are trusted; it returns the same information whether the adjustment was made at the unit level or, through `cluster`, at the household level (the household propensity is broadcast to its members). It also returns `.factor` (the multiplier actually applied to each unit) and, with propensity classes, `.class`; note that `1/.propensity` reconstructs the applied factor only when `num_classes = NULL`. Requested by ECLAC.
+* **`collect_step_detail()`** is a generic companion to `collect_weights()`: for any step it returns the weight each unit received (`.weight_in`) and the multiplier the step applied (`.factor`, read from the stored stage weights so `.weight_in * .factor` equals the outgoing weight by construction), plus that step's native per-unit quantities when it exposes them (for a propensity step, `.propensity` and `.class`).
+* **`domain_summary()`** reports, for a study domain (e.g. a department / DAM), how the weights move within each domain at every stage of the cascade -- active units, sum of weights, mean weight and Kish design effect -- so weight movement can be reviewed step by step per domain for quality control (requested by ECLAC). Domains follow their factor / numeric order, a missing domain value is shown as an explicit `(missing)` domain, and `by` accepts several columns (crossed).
+
+## Bug fixes and documentation
+
+* Robustness and correctness fixes for uncommon edge cases -- malformed or degenerate inputs, replicate-variance accounting, and the HTML report -- each covered by a regression test.
+* Documentation overhaul: help pages reviewed and rewritten, estimator formulas added to the details, and a new `?weightflow-concepts` page.
+
 # weightflow 1.0.0
 
 ## New features
@@ -22,8 +40,7 @@
   model is fit unweighted, so the incoming weights enter only the 1/p (or class)
   adjustment and not the model fit -- useful when the weights are unrelated to
   response given the covariates (Little & Vartivarian 2003). Works at unit and
-  household (cluster) level and across all engines. Thanks to Andrés Gutiérrez
-  (ECLAC - Statistics Division) for the suggestion.
+  household (cluster) level and across all engines. On a suggestion by Andrés Gutiérrez (ECLAC - Statistics Division).
 
 * **Nonresponse by calibration (two-phase).** `step_nonresponse()` gains
   `method = "calibration"`: instead of weighting classes or inverse propensities,

@@ -5,14 +5,14 @@
 \title{Collect replicate weights into a data frame ready for srvyr}
 \usage{
 collect_replicate_weights(
-  boot,
+  object,
   weight_name = ".weight",
   prefix = "rep_",
   drop_zero = TRUE
 )
 }
 \arguments{
-\item{boot}{a \code{weightflow_boot} object.}
+\item{object}{a \code{weightflow_boot} or \code{weightflow_jack} object.}
 
 \item{weight_name}{name of the point-weight column to add.}
 
@@ -22,13 +22,15 @@ collect_replicate_weights(
 }
 \value{
 A data frame: the original columns, \code{weight_name}, and one column per
-replicate. The number of replicates is stored in attribute \code{"R"}.
+replicate. The number of replicates is in attribute \code{"R"}, and the
+replication design in attributes \code{"type"}, \code{"scale"} and \code{"rscales"}.
 }
 \description{
-Returns the data with the point weight and the bootstrap replicate weights
-as columns, so it can be fed directly to \code{srvyr::as_survey_rep()} (or
-\code{survey::svrepdesign()}). Replicate columns are full weights, so use
-\code{combined.weights = TRUE}, \code{scale = 1 / R}, \code{rscales = 1}, \code{mse = TRUE}.
+Returns the data with the point weight and every replicate weight as ordinary
+columns, plus the replication design as attributes. This is the form
+\code{srvyr::as_survey_rep()} and \code{survey::svrepdesign()} expect, and the form to
+write out when the analysis continues in another session, another script or
+another language.
 }
 \examples{
 spec <- weighting_spec(sample_survey, base_weights = pw) |>
@@ -36,14 +38,15 @@ spec <- weighting_spec(sample_survey, base_weights = pw) |>
                  margins = list(region = c(table(population$region))))
 boot <- bootstrap_weights(spec, replicates = 30, strata = "region",
                           psu = "psu", seed = 1, progress = FALSE)
-df <- collect_replicate_weights(boot)
+df <- collect_replicate_weights(boot)   # or a weightflow_jack object
 \donttest{
 if (requireNamespace("srvyr", quietly = TRUE) &&
     requireNamespace("dplyr", quietly = TRUE)) {
   srvyr::as_survey_rep(df, weights = .weight,
                        repweights = dplyr::starts_with("rep_"),
-                       type = "bootstrap", combined.weights = TRUE,
-                       scale = 1 / attr(df, "R"), rscales = 1, mse = TRUE)
+                       type = attr(df, "type"), combined.weights = TRUE,
+                       scale = attr(df, "scale"), rscales = attr(df, "rscales"),
+                       mse = TRUE)
 }
 }
 }

@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Trimming survey weights</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Trimming survey weights</h1>
+
+
+
+<p>A few extreme weights inflate the variance of every estimate: the
+Kish design effect <span class="math inline">\(\text{deff} = 1 +
+\text{CV}^2(w)\)</span> grows with the coefficient of variation of the
+weights, so a long right tail costs precision. Trimming caps that tail.
+The question is <em>how</em> to cap it, and what it does to the totals
+you calibrated to.</p>
+<p>weightflow offers three tools, from the most automatic to the most
+constrained:</p>
+<ul>
+<li><code>step_trim_weights()</code>: cap at a data-driven threshold and
+redistribute the excess.</li>
+<li><code>step_trim()</code>: cap at a ratio you choose (relative to the
+base weights or the median), optionally per subgroup.</li>
+<li><code>step_trim_calibrated()</code>: pull the weights into a fixed
+range <strong>while preserving the calibration totals</strong>.</li>
+</ul>
+<p>The rest of this article shows each on the bundled
+<code>sample_survey</code> data, starting from a common calibrated
+recipe.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>base <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(sample_survey, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(<span class="at">unknown =</span> unknown_elig, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;propensity&quot;</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>                   <span class="at">engine =</span> <span class="st">&quot;logit&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> region <span class="sc">+</span> sex <span class="sc">+</span> age,</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>                   <span class="at">num_classes =</span> <span class="cn">NULL</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex))))</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>fit0 <span class="ot">&lt;-</span> <span class="fu">prep</span>(base)</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="fu">design_effect</span>(fit0<span class="sc">$</span>final_weight)[<span class="fu">c</span>(<span class="st">&quot;deff&quot;</span>, <span class="st">&quot;n_eff&quot;</span>)]</span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; $deff</span></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co">#&gt; [1] 1.044762</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co">#&gt; $n_eff</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a><span class="co">#&gt; [1] 258.4321</span></span></code></pre></div>
+<div id="automatic-caps-step_trim_weights" class="section level2">
+<h2>Automatic caps: <code>step_trim_weights()</code></h2>
+<p><code>step_trim_weights()</code> caps extreme weights at an upper
+threshold and shares the removed mass among the untrimmed units so the
+total is preserved. Called with no arguments it applies a floor of
+<code>lower = 1</code> and picks the upper cap automatically. Two rules
+are available through <code>method</code>:</p>
+<ul>
+<li><code>&quot;tukey&quot;</code> (default): the Tukey far-out fence, <span class="math inline">\(Q_3 + 3\,\text{IQR}\)</span> of the weights, a
+fixed, conservative rule.</li>
+<li><code>&quot;potter&quot;</code>: Potter’s cutoff, the <span class="math inline">\(\tau\)</span> that minimizes an estimate of <span class="math inline">\(\text{bias}(\tau)^2 + \text{var}(\tau)\)</span> of
+the weighted total, often more aggressive.</li>
+</ul>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>tukey  <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span> <span class="fu">step_trim_weights</span>(<span class="at">method =</span> <span class="st">&quot;tukey&quot;</span>)  <span class="sc">|&gt;</span> <span class="fu">prep</span>()</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>potter <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span> <span class="fu">step_trim_weights</span>(<span class="at">method =</span> <span class="st">&quot;potter&quot;</span>) <span class="sc">|&gt;</span> <span class="fu">prep</span>()</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">length</span>(tukey<span class="sc">$</span>steps)               <span class="co"># the trim is the last step</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="fu">rbind</span>(<span class="at">tukey  =</span> tukey<span class="sc">$</span>steps[[k]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)],</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>      <span class="at">potter =</span> potter<span class="sc">$</span>steps[[k]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)])</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;        method  upper n_capped</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; tukey   tukey 38.405        0</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; potter potter 20.446       38</span></span></code></pre></div>
+<p>You can also set the bounds by hand (<code>lower</code>,
+<code>upper</code>), which turns off the automatic rule. And the removed
+mass is shared either in proportion to the untrimmed weights
+(<code>redistribute = &quot;proportional&quot;</code>, the default, keeping their
+relative sizes) or equally (<code>redistribute = &quot;uniform&quot;</code>, which
+reproduces <code>survey::trimWeights()</code> exactly).</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>uniform <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>(<span class="at">upper =</span> <span class="dv">2500</span>, <span class="at">redistribute =</span> <span class="st">&quot;uniform&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="fu">design_effect</span>(uniform<span class="sc">$</span>final_weight)[[<span class="st">&quot;deff&quot;</span>]]</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; [1] 1.044762</span></span></code></pre></div>
+</div>
+<div id="ratio-caps-step_trim" class="section level2">
+<h2>Ratio caps: <code>step_trim()</code></h2>
+<p><code>step_trim()</code> caps at a ratio you choose rather than a
+data-driven threshold. The reference for the ratio is set by
+<code>reference</code>: <code>&quot;base&quot;</code> (a multiple of each unit’s
+base weight), <code>&quot;median&quot;</code> (a multiple of the median weight) or
+<code>&quot;value&quot;</code> (an absolute number). Here every weight is capped
+at four times the median:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>by_median <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="fu">step_trim</span>(<span class="at">max_ratio =</span> <span class="dv">4</span>, <span class="at">reference =</span> <span class="st">&quot;median&quot;</span>, <span class="at">redistribute =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="fu">range</span>(by_median<span class="sc">$</span>final_weight[by_median<span class="sc">$</span>final_weight <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; [1] 10.42822 21.20207</span></span></code></pre></div>
+<p>With <code>by</code>, the reference is computed <strong>within each
+group</strong>: the cap is four times <em>that group’s</em> median, so
+strata with different weight levels are trimmed on their own scale
+instead of against a single global median.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>by_region <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="fu">step_trim</span>(<span class="at">max_ratio =</span> <span class="dv">4</span>, <span class="at">reference =</span> <span class="st">&quot;median&quot;</span>, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>            <span class="at">redistribute =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="fu">range</span>(by_region<span class="sc">$</span>final_weight[by_region<span class="sc">$</span>final_weight <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; [1] 10.42822 21.20207</span></span></code></pre></div>
+</div>
+<div id="calibration-preserving-caps-step_trim_calibrated" class="section level2">
+<h2>Calibration-preserving caps:
+<code>step_trim_calibrated()</code></h2>
+<p>Both tools above cap and redistribute, which quietly breaks the
+calibration the recipe had achieved: the region and sex totals no longer
+hold after the trim. <code>step_trim_calibrated()</code> instead pulls
+the already-calibrated weights into an absolute interval
+<code>[lower, upper]</code> <strong>as a bounded re-calibration</strong>
+(the generalized exponential method of Folsom and Singh 2000), so every
+calibration total is still met. Weights inside the interval stay put;
+out-of-range ones saturate at their bound and the rest move minimally to
+restore the totals.</p>
+<p>Formally, it solves for new weights <span class="math inline">\(w_i^\star\)</span> that stay as close as possible
+to the incoming weights <span class="math inline">\(w_i\)</span>,
+subject to reproducing the totals and respecting the bounds:</p>
+<p><span class="math display">\[\min_{w^\star}\ \sum_i w_i\,
+G\!\left(\frac{w_i^\star}{w_i}\right)
+\quad\text{subject to}\quad
+\sum_i w_i^\star\, x_i = \sum_i w_i\, x_i, \qquad L \le w_i^\star \le
+U,\]</span></p>
+<p>where <span class="math inline">\(x_i\)</span> are the auxiliaries in
+<code>formula</code>, <span class="math inline">\([L, U]\)</span> are
+<code>lower</code> / <code>upper</code>, and <span class="math inline">\(G\)</span> is the calibration distance (the
+range-restricted linear one by default, or the multiplicative “raking”
+distance). The absolute-weight bound turns into a per-unit bound on the
+adjustment factor <span class="math inline">\(g_i = w_i^\star / w_i \in
+[L/w_i,\ U/w_i]\)</span>, which is what the solver enforces.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>w   <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(fit0, <span class="at">drop_zero =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>.weight</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>pos <span class="ot">&lt;-</span> w[w <span class="sc">&gt;</span> <span class="dv">0</span>]</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>lo  <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(pos, <span class="fl">0.05</span>)); up <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(pos, <span class="fl">0.95</span>))</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>trimmed <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, <span class="at">lower =</span> lo, <span class="at">upper =</span> up) <span class="sc">|&gt;</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<p>The totals are still reproduced after the trim (the differences are
+zero), while the weights now sit inside the interval:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">model.matrix</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, sample_survey)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">colSums</span>((trimmed<span class="sc">$</span>final_weight <span class="sc">-</span> w) <span class="sc">*</span> X), <span class="dv">6</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; (Intercept) regionSouth  regionEast  regionWest        sexM </span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt;           0           0           0           0           0</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">range</span>(trimmed<span class="sc">$</span>final_weight[trimmed<span class="sc">$</span>final_weight <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; [1] 10.61844 21.02522</span></span></code></pre></div>
+<div id="bounds-that-differ-by-subgroup" class="section level3">
+<h3>Bounds that differ by subgroup</h3>
+<p>The bounds can vary by subgroup: pass <code>lower</code> /
+<code>upper</code> as a <strong>named vector</strong> whose names are
+the levels of <code>by</code>, and each subgroup is trimmed to its own
+interval while the preserved totals of the formula stay global. This
+helps when the weight scale differs across strata. Here each region gets
+its own bounds, taken from that region’s 5th and 95th percentiles:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>lo_by <span class="ot">&lt;-</span> <span class="fu">tapply</span>(w, sample_survey<span class="sc">$</span>region, <span class="cf">function</span>(x) <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(x[x <span class="sc">&gt;</span> <span class="dv">0</span>], <span class="fl">0.05</span>)))</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>up_by <span class="ot">&lt;-</span> <span class="fu">tapply</span>(w, sample_survey<span class="sc">$</span>region, <span class="cf">function</span>(x) <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(x[x <span class="sc">&gt;</span> <span class="dv">0</span>], <span class="fl">0.95</span>)))</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>lo_by                                   <span class="co"># a vector named by the levels of `by`</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt;    North    South     East     West </span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt; 19.09643 16.40679 16.83631 10.49093</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>trimmed_by <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, <span class="at">lower =</span> lo_by, <span class="at">upper =</span> up_by, <span class="at">by =</span> <span class="st">&quot;region&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="fu">tapply</span>(trimmed_by<span class="sc">$</span>final_weight[trimmed_by<span class="sc">$</span>final_weight <span class="sc">&gt;</span> <span class="dv">0</span>],</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>       sample_survey<span class="sc">$</span>region[trimmed_by<span class="sc">$</span>final_weight <span class="sc">&gt;</span> <span class="dv">0</span>], range)</span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt; $North</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; [1] 19.09643 21.18463</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt; $South</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt; [1] 16.40679 18.31942</span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt; $East</span></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a><span class="co">#&gt; [1] 16.83631 18.61255</span></span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a><span class="co">#&gt; $West</span></span>
+<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a><span class="co">#&gt; [1] 10.49093 11.66819</span></span></code></pre></div>
+<p>You can also write the vector by hand, naming each level, for example
+<code>lower = c(North = 15, South = 12, East = 14, West = 10)</code>.</p>
+<p><strong>Crossing two variables.</strong> <code>by</code> takes a
+single column, so to trim by the crossing of two variables you first
+build the interaction column and pass that. For region-by-sex cells:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>d <span class="ot">&lt;-</span> sample_survey</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>d<span class="sc">$</span>reg_sex <span class="ot">&lt;-</span> <span class="fu">interaction</span>(d<span class="sc">$</span>region, d<span class="sc">$</span>sex, <span class="at">sep =</span> <span class="st">&quot;_&quot;</span>, <span class="at">drop =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co"># build the recipe on `d`, then trim with bounds named &quot;North_F&quot;, &quot;North_M&quot;, ...</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="fu">weighting_spec</span>(d, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="co"># ... eligibility, nonresponse, calibration ...</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region <span class="sc">+</span> sex, <span class="at">lower =</span> lo_cell, <span class="at">upper =</span> up_cell,</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>                       <span class="at">by =</span> <span class="st">&quot;reg_sex&quot;</span>)</span></code></pre></div>
+<p>Per-cell trimming only makes sense when the weights vary
+<em>within</em> the cell: if an earlier step made them constant inside
+each cell (for instance, calibrating to those very cells), there is
+nothing left to trim there.</p>
+<p>With <code>equal_within_cluster = TRUE</code> and a
+<code>cluster</code>, the trimming is integrative: one factor per
+household, so weights that were constant within household stay
+constant.</p>
+</div>
+</div>
+<div id="which-one-should-i-use" class="section level2">
+<h2>Which one should I use?</h2>
+<ul>
+<li>Use <code>step_trim_weights()</code> for a quick, data-driven cap
+when you have not calibrated yet, or when small deviations from the
+totals are acceptable.</li>
+<li>Use <code>step_trim()</code> when you want an explicit,
+interpretable rule (a multiple of the base weight or the median),
+possibly different per subgroup.</li>
+<li>Use <code>step_trim_calibrated()</code> when the weights are already
+calibrated and the totals must survive the trim: it is the only one of
+the three that does not break the calibration.</li>
+</ul>
+<p>All three compose like any other step, and the recipe-aware bootstrap
+and jackknife re-apply them on every replicate, so the standard errors
+reflect the trimming, not just the final weights. See the <em>Variance
+estimation</em> article for that, and <em>Get started</em> for the
+staged logic these steps plug into.</p>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<ul>
+<li>Potter, F. J. (1990). A study of procedures to identify and trim
+extreme sample weights. <em>Proc. ASA Survey Research Methods
+Section</em>, 225-230.</li>
+<li>Folsom, R. E., &amp; Singh, A. C. (2000). The generalized
+exponential model for sampling weight calibration for extreme values,
+nonresponse, and poststratification. <em>Proc. ASA Survey Research
+Methods Section</em>, 598-603.</li>
+<li>Kish, L. (1992). Weighting for unequal Pi. <em>Journal of Official
+Statistics</em>, 8(2), 183-200.</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

@@ -24,7 +24,7 @@ print.prepped_weighting_spec <- function(x, ...) {
   cat("Stage summary:\n")
   tab <- data.frame(
     stage     = names(h),
-    n_active  = vapply(h, function(w) sum(w > 0), integer(1)),
+    n_active  = vapply(h, function(w) sum(.wf_active(w)), integer(1)),
     sum_wts   = vapply(h, function(w) round(sum(w)), numeric(1)),
     cv_wts    = vapply(h, function(w) round(design_effect(w)$cv, 3), numeric(1)),
     deff_kish = vapply(h, function(w) round(design_effect(w)$deff, 3), numeric(1)),
@@ -39,6 +39,12 @@ print.prepped_weighting_spec <- function(x, ...) {
 }
 
 #' Detailed per-step diagnostics
+#'
+#' Prints the full audit of an estimated recipe: the stage-by-stage evolution of
+#' the weights, then one block per step with that step's own diagnostics table and
+#' the design effect before and after it, and finally the R-indicator when the
+#' recipe adjusted for nonresponse. Where `print()` answers "what is in this
+#' recipe?", `summary()` answers "what did each step do, and what did it cost?".
 #'
 #' @param object a prepped object (output of prep()).
 #' @param ... ignored.

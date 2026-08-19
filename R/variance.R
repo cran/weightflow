@@ -6,18 +6,19 @@
 ##   2. as_svydesign() / as_svrepdesign(): hand the weights to the 'survey'
 ##      package (ultimate-cluster linearization, or the replicate weights above).
 
-#' Bootstrap replicate weights that re-apply the recipe
+#' Recipe-aware bootstrap replicate weights
 #'
 #' Builds bootstrap replicate weights by resampling primary sampling units
-#' (PSUs) with replacement within strata and re-running the whole recipe on
-#' each replicate. Because every adjustment (nonresponse, calibration, ...) is
-#' recomputed per replicate, the resulting replicate weights propagate the
-#' variability introduced by each weighting stage.
+#' (PSUs) with replacement within strata and re-running the **entire** weighting
+#' recipe on each replicate -- every estimated stage (nonresponse, calibration,
+#' model calibration, trimming), not just one. Reach for this when those stages
+#' are estimated from the sample and you want their uncertainty inside the
+#' standard error, instead of conditioning on them as if they were known.
 #'
 #' The multiplier is the Rao-Wu rescaling bootstrap: within a stratum with
 #' \eqn{n} PSUs, \eqn{m} PSUs are drawn with replacement (default
 #' \eqn{m = n - 1}) and unit \eqn{i} in PSU \eqn{k} gets
-#' \eqn{\lambda = 1 - \sqrt{m/(n-1)} + \sqrt{m/(n-1)}\,(n/m)\,t_k}, with
+#' \eqn{\lambda = 1 - \sqrt{m/(n-1)} + \sqrt{m/(n-1)}\,(n/m)\,t_k}{lambda = 1 - sqrt(m/(n-1)) + sqrt(m/(n-1)) * (n/m) * t_k}, with
 #' \eqn{t_k} the number of times its PSU was drawn.
 #'
 #' @param object a `weighting_spec` (or a prepped one) holding the recipe.
@@ -56,6 +57,12 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   if (!inherits(object, "weighting_spec"))
     stop("`object` must be a weighting_spec or a prepped weighting_spec.")
   lonely_psu <- match.arg(lonely_psu)
+  replicates <- .wf_count(replicates, "replicates", min = 2L)
+  if (!is.null(m)) m <- .wf_count(m, "m", min = 1L)
+  # Snapshot the caller's RNG so the per-replicate seeding below does not leak
+  # into their stream (restored on exit, once the replicate seeds are drawn).
+  .rng_entry <- if (exists(".Random.seed", envir = .GlobalEnv))
+    get(".Random.seed", envir = .GlobalEnv) else NULL
   t0 <- Sys.time()
   data <- object$data
   bw   <- object$base_weights
@@ -73,7 +80,11 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
     if (!psu %in% names(data)) stop(sprintf("PSU column '%s' not found.", psu))
     as.character(data[[psu]])
   }
-  if (lonely_psu == "collapse") st <- .collapse_lonely(st, cl)
+  .assert_design_complete(data, strata, psu)
+  if (lonely_psu == "collapse") {
+    cl <- paste(st, cl, sep = "||")     # nest PSU ids so distinct PSUs stay distinct after merging strata
+    st <- .collapse_lonely(st, cl)
+  }
   hs <- unique(st)
   if (!is.null(seed)) set.seed(seed)
 
@@ -83,6 +94,14 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   singleton <- character(0)
   facs   <- vector("list", replicates)
   rseeds <- sample.int(.Machine$integer.max, replicates)
+  # Restore the RNG on exit so one_rep()'s per-replicate set.seed() does not leak.
+  # With an explicit `seed`: restore the caller's state entirely (no leak, fully
+  # reproducible). Unseeded: restore the state just after the replicate seeds were
+  # drawn, so consecutive unseeded calls still differ.
+  .rng_restore <- if (is.null(seed) && exists(".Random.seed", envir = .GlobalEnv))
+    get(".Random.seed", envir = .GlobalEnv) else .rng_entry
+  if (!is.null(.rng_restore))
+    on.exit(assign(".Random.seed", .rng_restore, envir = .GlobalEnv), add = TRUE)
   for (b in seq_len(replicates)) {
     fac <- numeric(n)
     for (h in hs) {
@@ -104,10 +123,17 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   one_rep <- function(b) {
     set.seed(rseeds[b])                       # only matters if a step is stochastic
     sp <- spec; sp$data[[bw]] <- bw0 * facs[[b]]
+    attr(sp$data, "wf_replicate") <- TRUE          # step_assert becomes a no-op in replicates
     tryCatch(prep(sp)$final_weight, error = function(e) rep(NA_real_, n))
   }
   fw_list <- .par_lapply(seq_len(replicates), one_rep, cores = cores,
                          progress = progress, label = "bootstrap")
+  # A dead mclapply worker (OOM-killed) returns NULL, and a serialization error a
+  # try-error; do.call(cbind, ) would silently drop the NULLs or coerce the whole
+  # matrix to character. Normalise every element to an n-vector so failures become
+  # NA columns and are counted, not lost.
+  fw_list <- lapply(fw_list, function(z)
+    if (is.numeric(z) && length(z) == n) z else rep(NA_real_, n))
   reps   <- do.call(cbind, fw_list)
   failed <- sum(vapply(fw_list, anyNA, logical(1)))
 
@@ -151,6 +177,7 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
 # (cores > 1). Kept dependency-free: `parallel` is a base R package.
 .par_lapply <- function(x, fun, cores = 1L, progress = FALSE, label = "") {
   cores <- max(1L, as.integer(cores))
+  if (cores > 1L && .Platform$OS.type == "windows") cores <- 1L   # mclapply has no forking on Windows
   if (cores > 1L && requireNamespace("parallel", quietly = TRUE)) {
     return(parallel::mclapply(x, fun, mc.cores = cores, mc.preschedule = TRUE))
   }
@@ -160,6 +187,32 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   })
 }
 
+# Reject NA in the design identifiers (strata / PSU) before resampling: a unit
+# with no stratum or no PSU cannot be resampled and would otherwise get a zero
+# replicate weight (or fail every replicate) silently. Error early and clearly.
+.assert_design_complete <- function(data, strata, psu) {
+  if (!is.null(strata) && anyNA(data[[strata]]))
+    stop(sprintf(paste0("Strata column '%s' has missing values (NA) in %d unit(s). ",
+                        "Resampling is undefined for a unit with no stratum; assign a stratum ",
+                        "to those units (or filter them) before bootstrap/jackknife."),
+                 strata, sum(is.na(data[[strata]]))), call. = FALSE)
+  if (!is.null(psu) && anyNA(data[[psu]]))
+    stop(sprintf(paste0("PSU column '%s' has missing values (NA) in %d unit(s). ",
+                        "Resampling is undefined for a unit with no PSU; assign a PSU to those ",
+                        "units (or filter them) before bootstrap/jackknife."),
+                 psu, sum(is.na(data[[psu]]))), call. = FALSE)
+}
+
+#' Print a bootstrap replicate-weight object
+#'
+#' Compact one-screen summary of a `weightflow_boot` object: how many replicates
+#' were requested, how many units are in the data, how many of them are still
+#' active (final weight above zero), and which columns defined the resampling
+#' design.
+#'
+#' @param x a `weightflow_boot` object.
+#' @param ... ignored.
+#' @return (invisibly) the object.
 #' @export
 print.weightflow_boot <- function(x, ...) {
   cat("<weightflow bootstrap>\n")
@@ -172,9 +225,16 @@ print.weightflow_boot <- function(x, ...) {
 
 #' Bootstrap estimate, standard error and confidence interval
 #'
-#' Applies a statistic to the point weights and to every replicate, and
-#' summarises it with the bootstrap variance \eqn{(1/B)\sum(\theta^*_b -
-#' \hat\theta)^2}.
+#' Applies a statistic to the point weights and to every bootstrap replicate, and
+#' returns the estimate with its bootstrap standard error and a normal confidence
+#' interval. `boot_total()` and `boot_mean()` are the two shortcuts you will use
+#' most: a weighted total and a weighted mean of one column.
+#'
+#' The bootstrap variance takes the replicate estimates
+#' \eqn{\hat\theta^{*}_b}{theta*_b} around the point estimate
+#' \eqn{\hat\theta}{theta_hat} (the `mse = TRUE` convention of `survey`), over the
+#' \eqn{R}{R} valid replicates (a failed replicate is dropped, not counted),
+#' \deqn{\widehat V_{\mathrm{boot}}(\hat\theta) = \frac{1}{R}\sum_{b=1}^{R}\big(\hat\theta^{*}_b - \hat\theta\big)^2.}{V_boot = (1/R) sum_b (theta*_b - theta_hat)^2.}
 #'
 #' @param boot a `weightflow_boot` object.
 #' @param statistic a function `function(w, data)` returning a numeric scalar
@@ -184,6 +244,7 @@ print.weightflow_boot <- function(x, ...) {
 #' @export
 bootstrap_estimate <- function(boot, statistic, level = 0.95) {
   if (!inherits(boot, "weightflow_boot")) stop("`boot` must be a weightflow_boot object.")
+  .wf_level(level)
   theta_hat <- statistic(boot$weights, boot$data)
   thetas    <- apply(boot$replicates, 2L, function(w) statistic(w, boot$data))
   z <- stats::qnorm(1 - (1 - level) / 2)
@@ -205,28 +266,33 @@ bootstrap_estimate <- function(boot, statistic, level = 0.95) {
 #' @rdname bootstrap_estimate
 #' @param variable name of the variable to estimate.
 #' @export
-boot_total <- function(boot, variable)
-  bootstrap_estimate(boot, function(w, d) sum(w * d[[variable]], na.rm = TRUE))
+boot_total <- function(boot, variable) {
+  variable <- .wf_var(variable, boot)
+  bootstrap_estimate(boot, function(w, d)
+    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE))
+}
 
 #' @rdname bootstrap_estimate
 #' @export
-boot_mean <- function(boot, variable)
+boot_mean <- function(boot, variable) {
+  variable <- .wf_var(variable, boot)
   bootstrap_estimate(boot, function(w, d) {
     x <- d[[variable]]; ok <- !is.na(x) & w > 0
     sum(w[ok] * x[ok]) / sum(w[ok])
   })
+}
 
 # ==========================================================================
 # Delete-a-PSU jackknife (recipe-aware)
 # ==========================================================================
 
-#' Delete-a-PSU jackknife replicate weights that re-apply the recipe
+#' Recipe-aware delete-a-PSU jackknife replicate weights
 #'
 #' Builds jackknife replicate weights by deleting one primary sampling unit
-#' (PSU) at a time and re-running the whole recipe on each replicate, so the
-#' replicate weights carry the variability of every adjustment (like
-#' `bootstrap_weights()`, but with the delete-a-PSU jackknife instead of a
-#' resampling bootstrap).
+#' (PSU) at a time and re-running the **entire** weighting recipe on each
+#' replicate. This is the deterministic sibling of [bootstrap_weights()]: same
+#' recipe-aware variance, no random number generation, and a replicate count
+#' fixed by the design rather than chosen by the analyst.
 #'
 #' For a stratum \eqn{h} with \eqn{n_h} PSUs, the replicate that deletes PSU
 #' \eqn{i} zeros the base weight of that PSU and inflates the remaining PSUs of
@@ -281,7 +347,11 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
     if (!psu %in% names(data)) stop(sprintf("PSU column '%s' not found.", psu))
     as.character(data[[psu]])
   }
-  if (lonely_psu == "collapse") st <- .collapse_lonely(st, cl)
+  .assert_design_complete(data, strata, psu)
+  if (lonely_psu == "collapse") {
+    cl <- paste(st, cl, sep = "||")     # nest PSU ids so distinct PSUs stay distinct after merging strata
+    st <- .collapse_lonely(st, cl)
+  }
 
   # one replicate per PSU, in strata with >= 2 PSUs
   rep_stratum <- character(0); rep_psu <- character(0); rep_nh <- integer(0)
@@ -304,10 +374,14 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
     fac[in_h & cl == rep_psu[r]] <- 0             # delete this PSU
     fac[in_h & cl != rep_psu[r]] <- nh / (nh - 1) # inflate the rest of the stratum
     sp <- spec; sp$data[[bw]] <- bw0 * fac
+    attr(sp$data, "wf_replicate") <- TRUE          # step_assert becomes a no-op in replicates
     tryCatch(prep(sp)$final_weight, error = function(e) rep(NA_real_, n))
   }
   fw_list <- .par_lapply(seq_len(R), one_rep, cores = cores,
                          progress = progress, label = "jackknife")
+  # normalise dead-worker NULLs / try-errors to NA columns (see bootstrap above)
+  fw_list <- lapply(fw_list, function(z)
+    if (is.numeric(z) && length(z) == n) z else rep(NA_real_, n))
   reps   <- do.call(cbind, fw_list)
   failed <- sum(vapply(fw_list, anyNA, logical(1)))
 
@@ -327,6 +401,16 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
             class = "weightflow_jack")
 }
 
+#' Print a jackknife replicate-weight object
+#'
+#' Compact one-screen summary of a `weightflow_jack` object: how many
+#' delete-a-PSU replicates were built, how many units are in the data, how many of
+#' them are still active (final weight above zero), and which columns defined the
+#' deletion design.
+#'
+#' @param x a `weightflow_jack` object.
+#' @param ... ignored.
+#' @return (invisibly) the object.
 #' @export
 print.weightflow_jack <- function(x, ...) {
   cat("<weightflow jackknife>\n")
@@ -340,11 +424,16 @@ print.weightflow_jack <- function(x, ...) {
 #' Jackknife estimate, standard error and confidence interval
 #'
 #' Applies a statistic to the point weights and to every delete-a-PSU replicate,
-#' and summarises it with the stratified jackknife (JKn) variance
-#' \deqn{\sum_h \frac{n_h - 1}{n_h} \sum_{i \in h} (\theta_{(hi)} - \bar\theta_h)^2,}
-#' where \eqn{\theta_{(hi)}} is the estimate with PSU \eqn{i} of stratum \eqn{h}
-#' deleted and \eqn{\bar\theta_h} the mean of those over the stratum. No finite
-#' population correction is applied.
+#' and returns the estimate with its stratified jackknife (JKn) standard error and
+#' a normal confidence interval. `jack_total()` and `jack_mean()` are the
+#' shortcuts for a weighted total and a weighted mean of one column.
+#'
+#' The stratified (JKn) variance sums each stratum's delete-a-PSU spread,
+#' \deqn{\widehat V_{JK} = \sum_h \frac{n_h - 1}{n_h}\sum_{i \in h}\big(\hat\theta_{(hi)} - \hat\theta_h\big)^2,}{V_JK = sum_h (n_h - 1)/n_h * sum_(i in h) (theta_(hi) - theta_h)^2,}
+#' with \eqn{\hat\theta_{(hi)}}{theta_(hi)} the estimate with PSU \eqn{i}{i} of
+#' stratum \eqn{h}{h} deleted and \eqn{\hat\theta_h}{theta_h} their within-stratum
+#' mean; the unstratified JK1 uses a single stratum. No finite population
+#' correction is applied.
 #'
 #' @param jack a `weightflow_jack` object.
 #' @param statistic a function `function(w, data)` returning a numeric scalar (or
@@ -352,6 +441,12 @@ print.weightflow_jack <- function(x, ...) {
 #' @param level confidence level for the (normal) interval.
 #' @param variable name of the variable to estimate (for `jack_total`/`jack_mean`).
 #' @return A data frame with `estimate`, `se`, `ci_lower`, `ci_upper`.
+#' @note `jack_total()` / `jack_mean()` center the replicate deviations on the
+#'   per-stratum mean of the deleted-PSU estimates (the standard JKn). The
+#'   `survey` design built by `as_svrepdesign()` instead uses `mse = TRUE`, which
+#'   centers on the point estimate. Both are legitimate, so the standard errors
+#'   from `jack_total()` and from `svytotal()` on the same object can differ
+#'   slightly.
 #' @examples
 #' spec <- weighting_spec(sample_one, base_weights = pw) |>
 #'   step_calibrate(method = "raking",
@@ -361,6 +456,7 @@ print.weightflow_jack <- function(x, ...) {
 #' @export
 jackknife_estimate <- function(jack, statistic, level = 0.95) {
   if (!inherits(jack, "weightflow_jack")) stop("`jack` must be a weightflow_jack object.")
+  .wf_level(level)
   theta_hat <- statistic(jack$weights, jack$data)
   thetas    <- apply(jack$replicates, 2L, function(w) statistic(w, jack$data))
   z <- stats::qnorm(1 - (1 - level) / 2)
@@ -371,9 +467,14 @@ jackknife_estimate <- function(jack, statistic, level = 0.95) {
     V <- 0
     for (h in unique(strat[good])) {
       sel <- strat == h & good
-      if (sum(sel) < 2L) next
-      nh <- nh_vec[which(sel)[1]]
-      V  <- V + (nh - 1) / nh * sum((th[sel] - mean(th[sel]))^2)
+      m   <- sum(sel)
+      if (m < 2L) next
+      nh  <- nh_vec[which(sel)[1]]
+      # If some of the nh delete-a-PSU replicates in this stratum failed, the sum
+      # runs over m < nh terms; scaling (nh-1)/nh up by nh/m (i.e. (nh-1)/m) makes
+      # the partial sum still estimate the full stratum contribution, instead of
+      # biasing the variance low.
+      V  <- V + (nh - 1) / m * sum((th[sel] - mean(th[sel]))^2)
     }
     V
   }
@@ -393,26 +494,38 @@ jackknife_estimate <- function(jack, statistic, level = 0.95) {
 
 #' @rdname jackknife_estimate
 #' @export
-jack_total <- function(jack, variable)
-  jackknife_estimate(jack, function(w, d) sum(w * d[[variable]], na.rm = TRUE))
+jack_total <- function(jack, variable) {
+  variable <- .wf_var(variable, jack)
+  jackknife_estimate(jack, function(w, d)
+    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE))
+}
 
 #' @rdname jackknife_estimate
 #' @export
-jack_mean <- function(jack, variable)
+jack_mean <- function(jack, variable) {
+  variable <- .wf_var(variable, jack)
   jackknife_estimate(jack, function(w, d) {
     x <- d[[variable]]; ok <- !is.na(x) & w > 0
     sum(w[ok] * x[ok]) / sum(w[ok])
   })
+}
 
 #' Export weightflow weights to a survey design
 #'
-#' `as_svydesign()` builds a linearization (ultimate-cluster) design from a
-#' prepped recipe; `as_svrepdesign()` builds a replicate-weights design from a
-#' bootstrap (`weightflow_boot`) or jackknife (`weightflow_jack`) object, so
-#' survey/srvyr standard errors include the recipe's adjustments. Both require
-#' the 'survey' package. With replicate weights you can then estimate any
-#' statistic for any domain (`svytotal`, `svymean`, `svyratio`, `svyby`, ...)
-#' with variances that reflect the whole recipe.
+#' `as_svydesign()` builds a linearization (ultimate-cluster) `survey.design`
+#' from a prepped recipe, treating the final weights as fixed constants.
+#' `as_svrepdesign()` builds a replicate-weights `svyrep.design` from a
+#' [bootstrap_weights()] or [jackknife_weights()] object. Both are the bridge to
+#' the `survey` package, and therefore to `svytotal()`, `svymean()`, `svyratio()`,
+#' `svyby()`, `svyglm()` and domain estimation generally.
+#'
+#' Only `as_svrepdesign()` propagates the variability of the weighting adjustments
+#' (nonresponse, calibration, ...), because each replicate re-runs the whole
+#' recipe. `as_svydesign()` is design-based linearization on the *fixed* final
+#' weights: its standard errors reflect the sampling design but treat the
+#' adjustments as known without error, so they are usually smaller. Use
+#' `as_svrepdesign()` (with `bootstrap_weights()` / `jackknife_weights()`) when
+#' the adjustment variability should be included.
 #'
 #' @param object for `as_svydesign`, a prepped recipe or a data frame with the
 #'   weight and design columns; for `as_svrepdesign`, a `weightflow_boot` or
@@ -432,8 +545,17 @@ as_svydesign <- function(object, ids, strata = NULL, weight_name = ".weight", ..
     if (!weight_name %in% names(df))
       stop(sprintf("Column '%s' not found; pass weight_name=.", weight_name))
   } else stop("`object` must be a prepped recipe or a data frame.")
-  df <- df[df[[weight_name]] > 0, , drop = FALSE]            # drop inactive units
-  f  <- function(v) stats::as.formula(paste("~", v))
+  # Keep the same active set the rest of the package uses (negatives are active;
+  # only 0 / non-finite are dropped), so svytotal reproduces sum(w * y).
+  wcol <- df[[weight_name]]
+  keep <- .wf_active(wcol)
+  if (any(wcol[keep] < 0))
+    warning(sprintf(paste0("%d negative weight(s) are included in the survey design; ",
+                           "survey variance formulas assume positive weights."),
+                    sum(wcol[keep] < 0)), call. = FALSE)
+  df <- df[keep, , drop = FALSE]                             # drop inactive units
+  # accept either a bare column name (string) or a formula; build a safe formula
+  f  <- function(v) if (inherits(v, "formula")) v else stats::reformulate(v)
   survey::svydesign(ids = f(ids), strata = if (is.null(strata)) NULL else f(strata),
                     weights = f(weight_name), data = df, nest = TRUE, ...)
 }
@@ -443,23 +565,40 @@ as_svydesign <- function(object, ids, strata = NULL, weight_name = ".weight", ..
 as_svrepdesign <- function(object, ...) {
   if (!requireNamespace("survey", quietly = TRUE))
     stop("Install the 'survey' package to use as_svrepdesign().")
-  keep <- object$weights > 0
+  keep <- .wf_active(object$weights)   # keep negatives (active); drop 0 / non-finite
+  if (any(object$weights[keep] < 0))
+    warning(sprintf(paste0("%d negative weight(s) are included in the survey design; ",
+                           "survey variance formulas assume positive weights."),
+                    sum(object$weights[keep] < 0)), call. = FALSE)
+  rw    <- object$replicates[keep, , drop = FALSE]
+  valid <- which(!apply(rw, 2, anyNA))              # drop failed replicates (NA columns)
+  ndrop <- ncol(rw) - length(valid)
+  if (!length(valid))
+    stop("All replicates have NA weights (every replicate failed); cannot build a ",
+         "replicate design.")
+  if (ndrop > 0L)
+    warning(sprintf(paste0("%d failed replicate(s) with NA weights were dropped ",
+                           "from the survey design; the scale is set to 1/%d valid ",
+                           "replicates."), ndrop, length(valid)), call. = FALSE)
+  rw <- rw[, valid, drop = FALSE]
+  Rv <- length(valid)
   if (inherits(object, "weightflow_boot")) {
     survey::svrepdesign(
       data = object$data[keep, , drop = FALSE],
       weights = object$weights[keep],
-      repweights = object$replicates[keep, , drop = FALSE],
+      repweights = rw,
       type = "bootstrap", combined.weights = TRUE,
-      scale = 1 / object$R, rscales = rep(1, object$R), mse = TRUE, ...)
+      scale = 1 / Rv, rscales = rep(1, Rv), mse = TRUE, ...)
   } else if (inherits(object, "weightflow_jack")) {
     # delete-a-PSU jackknife: full (combined) replicate weights with per-replicate
-    # scale (n_h - 1)/n_h; survey centres at the point estimate (mse = TRUE).
+    # scale (n_h - 1)/n_h; survey centers at the point estimate (mse = TRUE).
     survey::svrepdesign(
       data = object$data[keep, , drop = FALSE],
       weights = object$weights[keep],
-      repweights = object$replicates[keep, , drop = FALSE],
+      repweights = rw,
       type = "other", combined.weights = TRUE,
-      scale = 1, rscales = (object$rep_nh - 1) / object$rep_nh, mse = TRUE, ...)
+      scale = 1, rscales = ((object$rep_nh - 1) / object$rep_nh)[valid],
+      mse = TRUE, ...)
   } else {
     stop("`object` must be a weightflow_boot or weightflow_jack object.")
   }
@@ -467,44 +606,90 @@ as_svrepdesign <- function(object, ...) {
 
 #' Collect replicate weights into a data frame ready for srvyr
 #'
-#' Returns the data with the point weight and the bootstrap replicate weights
-#' as columns, so it can be fed directly to `srvyr::as_survey_rep()` (or
-#' `survey::svrepdesign()`). Replicate columns are full weights, so use
-#' `combined.weights = TRUE`, `scale = 1 / R`, `rscales = 1`, `mse = TRUE`.
+#' Returns the data with the point weight and every replicate weight as ordinary
+#' columns, plus the replication design as attributes. This is the form
+#' `srvyr::as_survey_rep()` and `survey::svrepdesign()` expect, and the form to
+#' write out when the analysis continues in another session, another script or
+#' another language.
 #'
-#' @param boot a `weightflow_boot` object.
+#' @param object a `weightflow_boot` or `weightflow_jack` object.
 #' @param weight_name name of the point-weight column to add.
 #' @param prefix prefix for the replicate-weight columns (`rep_1`, `rep_2`, ...).
 #' @param drop_zero keep only active units (point weight > 0).
 #' @return A data frame: the original columns, `weight_name`, and one column per
-#'   replicate. The number of replicates is stored in attribute `"R"`.
+#'   replicate. The number of replicates is in attribute `"R"`, and the
+#'   replication design in attributes `"type"`, `"scale"` and `"rscales"`.
 #' @examples
 #' spec <- weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_calibrate(method = "raking",
 #'                  margins = list(region = c(table(population$region))))
 #' boot <- bootstrap_weights(spec, replicates = 30, strata = "region",
 #'                           psu = "psu", seed = 1, progress = FALSE)
-#' df <- collect_replicate_weights(boot)
+#' df <- collect_replicate_weights(boot)   # or a weightflow_jack object
 #' \donttest{
 #' if (requireNamespace("srvyr", quietly = TRUE) &&
 #'     requireNamespace("dplyr", quietly = TRUE)) {
 #'   srvyr::as_survey_rep(df, weights = .weight,
 #'                        repweights = dplyr::starts_with("rep_"),
-#'                        type = "bootstrap", combined.weights = TRUE,
-#'                        scale = 1 / attr(df, "R"), rscales = 1, mse = TRUE)
+#'                        type = attr(df, "type"), combined.weights = TRUE,
+#'                        scale = attr(df, "scale"), rscales = attr(df, "rscales"),
+#'                        mse = TRUE)
 #' }
 #' }
 #' @export
-collect_replicate_weights <- function(boot, weight_name = ".weight",
+collect_replicate_weights <- function(object, weight_name = ".weight",
                                       prefix = "rep_", drop_zero = TRUE) {
-  if (!inherits(boot, "weightflow_boot")) stop("`boot` must be a weightflow_boot object.")
-  keep <- if (drop_zero) boot$weights > 0 else rep(TRUE, length(boot$weights))
-  out  <- boot$data[keep, , drop = FALSE]
-  reps <- boot$replicates[keep, , drop = FALSE]
+  if (!inherits(object, c("weightflow_boot", "weightflow_jack")))
+    stop("`object` must be a weightflow_boot or weightflow_jack object.")
+  weight_name <- .wf_outname(weight_name, "weight_name")
+  prefix      <- .wf_outname(prefix, "prefix")
+  keep <- if (drop_zero) object$weights > 0 else rep(TRUE, length(object$weights))
+  out  <- object$data[keep, , drop = FALSE]
+  reps <- object$replicates[keep, , drop = FALSE]
+  # Drop failed replicates (all-NA columns) so downstream survey / srvyr does not
+  # return NA standard errors, and keep scale / rscales / R consistent with the
+  # survivors. Same rule (and message) as as_svrepdesign().
+  valid <- which(!apply(reps, 2, anyNA))
+  ndrop <- ncol(reps) - length(valid)
+  if (!length(valid))
+    stop("All replicates have NA weights (every replicate failed); cannot build ",
+         "replicate weights.", call. = FALSE)
+  if (ndrop > 0L)
+    warning(sprintf(paste0("%d failed replicate(s) with NA weights were dropped; ",
+                           "the replicate design now uses %d valid replicate(s)."),
+                    ndrop, length(valid)), call. = FALSE)
+  reps <- reps[, valid, drop = FALSE]
   colnames(reps) <- paste0(prefix, seq_len(ncol(reps)))
-  out[[weight_name]] <- boot$weights[keep]
+  # N-19 sibling: warn if the point-weight column overwrites an existing one
+  # (collect_weights() already does this).
+  if (weight_name %in% names(out))
+    warning(sprintf("Column `%s` already exists and will be overwritten.", weight_name),
+            call. = FALSE)
+  out[[weight_name]] <- object$weights[keep]
+  # N-25: refuse to create duplicate column names. If the data already carries
+  # columns matching the replicate prefix (e.g. a stray `rep_1`), cbind() would
+  # produce two `rep_1` columns and the documented starts_with("rep_") flow would
+  # silently pick the wrong one.
+  clash <- intersect(colnames(reps), names(out))
+  if (length(clash))
+    stop(sprintf(paste0("The data already has column(s) %s, which collide with the ",
+                        "replicate columns produced by prefix = \"%s\". Pass a different ",
+                        "`prefix` (or rename those columns) before collecting."),
+                 paste(sQuote(clash), collapse = ", "), prefix), call. = FALSE)
   out <- cbind(out, as.data.frame(reps))
   rownames(out) <- NULL
-  attr(out, "R") <- boot$R
+  attr(out, "R") <- length(valid)
+  # Replication design for survey/srvyr, correct per method: the bootstrap uses
+  # scale 1/R with unit rscales; the delete-a-PSU jackknife uses scale 1 with
+  # per-replicate rscales (n_h - 1)/n_h (survey type = "other").
+  if (inherits(object, "weightflow_jack")) {
+    attr(out, "type")    <- "other"
+    attr(out, "scale")   <- 1
+    attr(out, "rscales") <- ((object$rep_nh - 1) / object$rep_nh)[valid]
+  } else {
+    attr(out, "type")    <- "bootstrap"
+    attr(out, "scale")   <- 1 / length(valid)
+    attr(out, "rscales") <- rep(1, length(valid))
+  }
   out
 }

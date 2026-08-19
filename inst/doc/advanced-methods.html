@@ -527,19 +527,25 @@ the smallest estimated MSE.</p>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>)) <span class="sc">|&gt;</span></span>
 <span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>(<span class="at">method =</span> <span class="st">&quot;tukey&quot;</span>) <span class="sc">|&gt;</span></span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a></span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>trimmed_potter <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>(<span class="at">method =</span> <span class="st">&quot;potter&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a></span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>trimmed_tukey<span class="sc">$</span>steps[[<span class="dv">6</span>]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)]</span>
-<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt;   method  upper n_capped</span></span>
-<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; 1  tukey 91.367        1</span></span>
-<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a>trimmed_potter<span class="sc">$</span>steps[[<span class="dv">6</span>]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)]</span>
-<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt;   method  upper n_capped</span></span>
-<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; 1 potter 60.127        4</span></span></code></pre></div>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>trimmed_potter <span class="ot">&lt;-</span> base <span class="sc">|&gt;</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>(<span class="at">method =</span> <span class="st">&quot;potter&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>trimmed_tukey<span class="sc">$</span>steps[[<span class="dv">6</span>]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)]</span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="co">#&gt;   method  upper n_capped</span></span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a><span class="co">#&gt; 1  tukey 91.367        1</span></span>
+<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a>trimmed_potter<span class="sc">$</span>steps[[<span class="dv">6</span>]]<span class="sc">$</span>diagnostics[, <span class="fu">c</span>(<span class="st">&quot;method&quot;</span>, <span class="st">&quot;upper&quot;</span>, <span class="st">&quot;n_capped&quot;</span>)]</span>
+<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a><span class="co">#&gt;   method  upper n_capped</span></span>
+<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a><span class="co">#&gt; 1 potter 60.127        4</span></span></code></pre></div>
 <p>The two rules give different cutoffs: the Tukey far-out fence is a
 fixed, conservative rule, while Potter searches for the cutoff that
 minimizes estimated MSE, often more aggressive, capping a few more
@@ -571,13 +577,19 @@ is still met.</p>
 <span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region))))</span>
 <span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a></span>
 <span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>pre <span class="ot">&lt;-</span> <span class="fu">prep</span>(recipe)</span>
-<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>w   <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(pre, <span class="at">drop_zero =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>.weight</span>
-<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>w   <span class="ot">&lt;-</span> w[w <span class="sc">&gt;</span> <span class="dv">0</span>]</span>
-<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>lo  <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.05</span>)); up <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.95</span>))</span>
-<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a></span>
-<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>trimmed <span class="ot">&lt;-</span> recipe <span class="sc">|&gt;</span></span>
-<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region, <span class="at">lower =</span> lo, <span class="at">upper =</span> up) <span class="sc">|&gt;</span></span>
-<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>w   <span class="ot">&lt;-</span> <span class="fu">collect_weights</span>(pre, <span class="at">drop_zero =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>.weight</span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>w   <span class="ot">&lt;-</span> w[w <span class="sc">&gt;</span> <span class="dv">0</span>]</span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>lo  <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.05</span>)); up <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(w, <span class="fl">0.95</span>))</span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a>trimmed <span class="ot">&lt;-</span> recipe <span class="sc">|&gt;</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a>  <span class="fu">step_trim_calibrated</span>(<span class="sc">~</span> region, <span class="at">lower =</span> lo, <span class="at">upper =</span> up) <span class="sc">|&gt;</span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span></code></pre></div>
 <p>The region totals are still met after the trim (the differences are
 zero), whereas the weights now sit inside the interval:</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>Xr     <span class="ot">&lt;-</span> <span class="fu">model.matrix</span>(<span class="sc">~</span> region, sample_one)</span>

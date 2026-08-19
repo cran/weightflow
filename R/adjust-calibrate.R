@@ -1,0 +1,402 @@
+# calibration steps: domain-partitioned calibration and apply_step.step_calibrate().
+
+# --- Domain (partitioned) calibration --------------------------------------
+# Split one tidy totals table to a single domain `d`: keep the rows of that
+# domain, drop the domain column. A table with the `count` column stays a
+# (categorical) data frame; a 2-column table without `count` (a continuous
+# total given as `domain, value`) collapses to the single number for `d`.
+.split_totals_by_domain <- function(totals, byvar, count, d) {
+  split_one <- function(t) {
+    if (!is.data.frame(t)) return(t)
+    if (!byvar %in% names(t))
+      stop(sprintf("The calibration totals are missing the domain column '%s'.", byvar))
+    sub <- t[as.character(t[[byvar]]) == d, , drop = FALSE]
+    sub[[byvar]] <- NULL
+    rownames(sub) <- NULL
+    if (!is.null(count) && !(count %in% names(sub)) && ncol(sub) == 1L)
+      return(as.numeric(sub[[1L]][1L]))           # continuous total -> single number
+    sub
+  }
+  if (is.data.frame(totals)) split_one(totals)
+  else if (is.list(totals)) { out <- lapply(totals, split_one); names(out) <- names(totals); out }
+  else totals
+}
+
+# Calibrate independently within each domain and stitch the weights back.
+.calibrate_by_domain <- function(step, data, w) {
+  byvar <- step$by
+  if (!byvar %in% names(data))
+    stop(sprintf("Domain column '%s' not found in the data.", byvar))
+  dom    <- as.character(data[[byvar]])
+  active <- .wf_active(w)
+  if (any(is.na(dom[active])))
+    stop(sprintf("Domain column '%s' has missing values (NA) among active units.", byvar))
+
+  new_w <- w
+  diags <- list(); domsum <- list()
+  gL <- list(); dL <- list(); covL <- list(); aidxL <- list()
+  chi2 <- 0; calfun <- NULL; bounds <- NULL; cform <- NULL; conv <- logical(0)
+  doms  <- unique(dom[active])
+  # #4: a domain present in `totals` but with NO unit in the sample would never be
+  # iterated, so its control total is silently dropped and the calibrated weights
+  # fall short of the intended population size. Surface it.
+  tot_doms <- if (is.data.frame(step$totals)) unique(as.character(step$totals[[byvar]]))
+              else if (is.list(step$totals))
+                unique(unlist(lapply(step$totals, function(t)
+                  if (is.data.frame(t) && byvar %in% names(t)) as.character(t[[byvar]]) else NULL)))
+              else NULL
+  miss_dom <- setdiff(tot_doms, doms)
+  if (length(miss_dom))
+    warning(sprintf(paste0("The calibration `totals` include domain(s) of '%s' with no unit in ",
+                          "the sample: %s. Their control totals are dropped, so the weighted ",
+                          "total does not reach the intended population size. Check the domain ",
+                          "coverage of the sample and the totals."),
+                    byvar, paste(utils::head(miss_dom, 10L), collapse = ", ")), call. = FALSE)
+  for (d in doms) {
+    idx_d  <- which(dom == d)
+    step_d <- step
+    step_d$by     <- NULL                          # avoid recursion; calibrate this domain
+    step_d$totals <- .split_totals_by_domain(step$totals, byvar, step$count, d)
+    res_d <- apply_step(step_d, data[idx_d, , drop = FALSE], w[idx_d])
+    new_w[idx_d] <- res_d$weights
+    dg <- res_d$diagnostics
+    conv <- c(conv, attr(dg, "converged"))         # NULL (e.g. poststrat) contributes nothing
+    if (!is.null(dg) && nrow(dg) > 0L)
+      diags[[length(diags) + 1L]] <- cbind(domain = d, dg)
+    cdd <- attr(dg, "calibrate")                   # per-domain calibration summary
+    if (!is.null(cdd) && !is.null(cdd$g)) {
+      gg <- cdd$g; ww <- cdd$d * gg; bnd <- cdd$bounds
+      domsum[[length(domsum) + 1L]] <- data.frame(
+        domain = d, n = length(gg), g_min = min(gg), g_max = max(gg),
+        n_neg = sum(ww < 0),
+        n_bound = if (!is.null(bnd)) sum(abs(gg - bnd[1]) < 1e-6 | abs(gg - bnd[2]) < 1e-6) else 0L,
+        cond = cdd$cond, converged = isTRUE(attr(dg, "converged")),
+        stringsAsFactors = FALSE)
+      # pool the per-unit pieces so the global calibration card shows too
+      gL[[length(gL) + 1L]]       <- gg
+      dL[[length(dL) + 1L]]       <- as.numeric(cdd$d)
+      covL[[length(covL) + 1L]]   <- cdd$covars
+      aidxL[[length(aidxL) + 1L]] <- idx_d[cdd$active_idx]
+      chi2 <- chi2 + (if (is.finite(cdd$chi2)) cdd$chi2 else 0)
+      if (is.null(calfun)) { calfun <- cdd$calfun; bounds <- cdd$bounds; cform <- cdd$formula }
+    }
+  }
+  diag <- if (length(diags)) do.call(rbind, diags) else NULL
+  if (!is.null(diag)) {
+    attr(diag, "note") <- sprintf("calibrated independently within '%s' (%d domains)",
+                                  byvar, length(doms))
+    if (length(domsum)) attr(diag, "calib_domains") <- do.call(rbind, domsum)
+    # Propagate an overall convergence flag: the step converged iff EVERY domain
+    # that has one did (poststrat domains have none and are exact by construction).
+    # Without this the by-domain path left `converged` NULL and the report showed
+    # green even when a domain failed to converge (M5).
+    if (length(conv)) attr(diag, "converged") <- all(conv)
+    if (length(gL))
+      attr(diag, "calibrate") <- list(
+        g = unlist(gL), d = unlist(dL), covars = do.call(rbind, covL),
+        formula = cform, active_idx = unlist(aidxL), calfun = calfun,
+        bounds = bounds, cond = NA_real_, chi2 = chi2, pooled = TRUE)
+  }
+  list(weights = new_w, diagnostics = diag)
+}
+
+# Guard: every level named in a classic (named-vector) raking / poststrat margin
+# must match at least one ACTIVE unit. A level that matches nothing -- a typo
+# like "Zona99", or a category carried over from the population projections --
+# would otherwise be raked silently to a total no unit can reach, so the
+# achieved total falls short with no warning (the sibling of the labelled-factor
+# trap). One check closes it: error, naming the offending levels.
+.check_margin_levels <- function(margins, data, active) {
+  for (v in names(margins)) {
+    if (!v %in% names(data))
+      stop(sprintf("Margin variable '%s' not found in the data.", v), call. = FALSE)
+    # No NA in a raking / poststratification variable: a unit with no cell cannot
+    # be raked, so erroring here avoids the silent pass-through where NA units
+    # keep their base weight and the calibrated total drifts.
+    if (anyNA(data[[v]][active]))
+      stop(sprintf(paste0("Margin variable '%s' has missing values (NA) in %d active unit(s). ",
+                          "Raking / post-stratification needs a cell for every unit. Impute or ",
+                          "recode the NAs before calibrating."),
+                   v, sum(is.na(data[[v]][active]))), call. = FALSE)
+    have <- unique(as.character(data[[v]])[active])
+    miss <- setdiff(names(margins[[v]]), have)
+    if (length(miss))
+      stop(sprintf(paste0("Margin '%s' names level(s) that match no active unit: %s. ",
+                          "Observed level(s) in the data: %s. ",
+                          "Check for a typo, a category carried over from the population ",
+                          "totals, or a haven_labelled column named by its labels while the ",
+                          "data holds the codes (convert with haven::as_factor() first)."),
+                   v, paste(miss, collapse = ", "),
+                   paste(utils::head(have, 15L), collapse = ", ")), call. = FALSE)
+    # C1b: the reverse gap -- a level PRESENT in the sample but ABSENT from the
+    # margin. Those units have no target, so raking/post-stratification leaves
+    # them at their incoming weight and the calibrated total silently misses N
+    # (e.g. sum(w) = 4620 vs N = 4495). A classic margin must cover every sample
+    # level of its variable; error, naming the uncovered one(s).
+    uncovered <- setdiff(have, names(margins[[v]]))
+    if (length(uncovered))
+      stop(sprintf(paste0("Margin '%s' does not cover level(s) present in the sample: %s. ",
+                          "Every level of '%s' observed among the active units needs a target ",
+                          "in the margin, otherwise those units stay uncalibrated and the ",
+                          "weighted total will not reproduce the population size. Add the "
+                          , "missing level(s), or recode them into a covered category."),
+                   v, paste(utils::head(uncovered, 15L), collapse = ", "), v), call. = FALSE)
+  }
+}
+
+# --- Calibration -----------------------------------------------------------
+apply_step.step_calibrate <- function(step, data, w) {
+  active <- .wf_active(w)
+  new_w  <- w
+
+  if (!is.null(step$by)) return(.calibrate_by_domain(step, data, w))
+
+  if (step$method == "poststratify") {
+    # --- tidy `totals` data frame (one or more category columns + counts) ---
+    if (is.data.frame(step$totals)) {
+      prep <- .prep_poststrata(step$totals, step$count, data, active)
+      out  <- .poststratify_calc(prep, new_w, active)
+      return(list(weights = out$weights, diagnostics = out$diagnostics))
+    }
+    # --- classic `margins` named list (unchanged) ---
+    if (length(step$margins) != 1L)
+      stop("poststratify uses exactly one variable in `margins`.")
+    .check_margin_levels(step$margins, data, active)
+    v      <- names(step$margins)[1]
+    target <- step$margins[[1]]
+    f      <- as.character(data[[v]])
+    diag   <- list()
+    for (lev in names(target)) {
+      idx <- which(f == lev & active)
+      cur <- sum(new_w[idx])
+      fac <- if (cur > 0) target[[lev]] / cur else NA_real_
+      if (!is.na(fac)) new_w[idx] <- new_w[idx] * fac
+      diag[[length(diag) + 1]] <- data.frame(
+        variable = v, category = lev, target = target[[lev]],
+        prev_total = cur, factor = fac, stringsAsFactors = FALSE
+      )
+    }
+    return(list(weights = new_w, diagnostics = do.call(rbind, diag)))
+  }
+
+  if (step$method == "linear") {
+    # Linear / GREG calibration. Handles continuous and categorical auxiliaries.
+    # Closed form for unbounded linear; Deville-Sarndal solver for bounded or
+    # logit (calfun), which keeps g within `bounds`.
+    d  <- new_w[active]
+    X  <- stats::model.matrix(step$formula, data = data[active, , drop = FALSE])
+    if (nrow(X) != length(d) || anyNA(X))
+      stop("Auxiliaries in `formula` have missing values (NA) in the active ",
+           "sample; calibration needs a value for every unit. Impute them first, ",
+           "or calibrate on a complete auxiliary.")
+    cn <- colnames(X)
+    # `totals` may be given two ways:
+    #   - tidy: a NAMED LIST (data frame per categorical, number per continuous)
+    #     -> translate to the model.matrix totals vector
+    #   - classic: a named numeric vector aligned with the model.matrix columns
+    if (is.list(step$totals) && !is.data.frame(step$totals)) {
+      totvec <- .prep_linear_totals(step$formula, step$totals, step$count,
+                                    data, active)
+    } else {
+      totvec <- step$totals
+    }
+    if (anyDuplicated(names(totvec)))
+      stop(sprintf(paste0("`totals` has duplicate names: %s. Each model-matrix column needs ",
+                          "exactly one target; with duplicates only one value would be used ",
+                          "(setequal ignores the repetition)."),
+                   paste(unique(names(totvec)[duplicated(names(totvec))]), collapse = ", ")),
+           call. = FALSE)
+    if (!setequal(names(totvec), cn))
+      stop(sprintf(
+        "`totals` names must match the model.matrix columns.\nExpected: %s",
+        paste(cn, collapse = ", ")))
+    Tvec     <- as.numeric(totvec[cn])      # reorder to X columns
+    # Closed form only for plain linear (calfun = "linear", no bounds). The
+    # exponential ("raking") distance, logit, or explicit bounds use the
+    # iterative Deville-Sarndal solver. Only bounds/logit may relax the
+    # constraints; the exponential distance is exact when it converges.
+    use_ds    <- step$calfun != "linear" || !is.null(step$bounds)
+    truncated <- !is.null(step$bounds) || step$calfun == "logit"
+    if (!is.null(step$penalty) && use_ds)
+      stop("`penalty` (ridge) is only available for unbounded linear ",
+           "calibration (calfun = \"linear\" without bounds).")
+
+    ds_converged <- TRUE
+    if (!step$equal_within_cluster) {
+      # --- unit-level ---
+      sol <- .solve_calibration(X, d, Tvec, step$calfun, step$bounds,
+                                step$penalty, step$maxit, step$tol)
+      g            <- sol$g
+      ds_converged <- sol$converged
+      new_w[active] <- d * g
+      note_clust <- ""
+
+    } else {
+      # --- integrative calibration (Lemaitre-Dufour 1987): one weight/household ---
+      if (!step$cluster %in% names(data))
+        stop(sprintf("Cluster column '%s' not found in the data.", step$cluster))
+      cl <- as.character(data[[step$cluster]])[active]
+      if (anyNA(cl))
+        stop(sprintf("Cluster column '%s' has missing values (NA).", step$cluster))
+      # Lemaitre-Dufour: replace each person's auxiliaries by the HOUSEHOLD MEAN
+      # and calibrate at the person level, so all members share one weight. The
+      # per-household mass is the household's total base weight (sum over persons),
+      # i.e. the penalty scales with household size. This matches survey's
+      # aggregate.stage (Vanderhoeft 2001), to machine precision. (ReGenesees
+      # implements a different integrative variant, so it need not agree.)
+      hh   <- unique(cl)
+      n_h  <- as.numeric(tapply(d, cl, length)[hh])       # persons per household
+      Wsum <- as.numeric(tapply(d, cl, sum)[hh])          # total base weight in household
+      # `equal_within_cluster = TRUE` promises ONE weight per cluster. That is
+      # only well defined when the pre-calibration (incoming) weights are already
+      # constant within each cluster: the final weight is base_weight x household
+      # g-factor, so if the base weights differ within a cluster the members end
+      # up with DIFFERENT final weights and the promise is silently broken. Refuse
+      # up front and tell the user to look at the upstream step, rather than
+      # returning per-member-varying weights that only look like one-per-cluster.
+      nonunif <- tapply(d, cl, function(z) (max(z) - min(z)) > 1e-9 * max(abs(z), 1))
+      if (any(nonunif, na.rm = TRUE))
+        stop(sprintf(paste0("`equal_within_cluster = TRUE` needs one weight per cluster, but the ",
+                          "pre-calibration base weights are NOT constant within %d of %d '%s' ",
+                          "cluster(s). The final weights would differ between members of the same ",
+                          "cluster (final = base x household g-factor), breaking the one-weight-per-",
+                          "cluster promise. Review the upstream step that made the within-cluster ",
+                          "weights differ, or drop `equal_within_cluster`."),
+                   sum(nonunif, na.rm = TRUE), length(nonunif), step$cluster), call. = FALSE)
+      Xbar <- rowsum(X, group = cl)[hh, , drop = FALSE] / n_h   # household MEANS
+      # (arithmetic mean: matches survey's aggregate.stage to machine precision;
+      # valid because the within-cluster weights are now guaranteed constant.)
+      sol  <- .solve_calibration(Xbar, Wsum, Tvec, step$calfun, step$bounds,
+                                 step$penalty, step$maxit, step$tol)
+      gh           <- sol$g
+      ds_converged <- sol$converged
+      names(gh) <- hh
+      new_w[active] <- d * gh[cl]          # each person: own base weight x household g-factor
+      g          <- gh
+      note_clust <- sprintf("; one weight per '%s' (integrative)", step$cluster)
+    }
+
+    # Achieved totals with the REAL X (must match the targets, except under ridge)
+    achieved <- colSums(new_w[active] * X)
+    # Check that the calibration constraints are satisfied (unless ridge, where
+    # relaxation is intentional, or bounded, which has its own convergence warn).
+    # Verify the REAL achieved totals against the targets -- ALWAYS, not only in
+    # the unbounded case. Under bounds/logit some relaxation is legitimate, so
+    # the tolerance is loosened and the DS convergence flag is folded in; but a
+    # gross miss (e.g. the old integrative-mean bug) is no longer hidden just
+    # because `bounds` were supplied.
+    conv_ok <- if (truncated) ds_converged else TRUE
+    if (is.null(step$penalty)) {
+      rel_dev <- abs(achieved - Tvec) / (abs(Tvec) + 1)
+      tol_dev <- if (truncated) 1e-3 else 1e-6
+      off <- which(rel_dev > tol_dev)
+      if (length(off) > 0L) {
+        conv_ok <- FALSE
+        warning(sprintf(
+          paste0("Calibration did not satisfy the constraints for: %s. The achieved ",
+                 "totals differ from the targets (max relative deviation = %.2e). Under ",
+                 "bounds this can mean the bounds are infeasible; otherwise check for ",
+                 "collinear auxiliaries or non-uniform within-cluster base weights."),
+          paste(utils::head(cn[off], 10L), collapse = ", "), max(rel_dev)),
+          call. = FALSE)
+      }
+    }
+    diag <- data.frame(variable = cn, target = Tvec,
+                       achieved = round(achieved, 2), stringsAsFactors = FALSE)
+    if (!is.null(step$penalty))
+      diag$deviation <- round(achieved - Tvec, 2)
+    attr(diag, "converged") <- conv_ok
+    attr(diag, "reconcile") <- attr(totvec, "reconcile")
+    bnote <- if (use_ds)
+      sprintf(" [calfun = %s%s]", step$calfun,
+              if (!is.null(step$bounds)) sprintf(", bounds (%.2f, %.2f)",
+                                                 step$bounds[1], step$bounds[2]) else "")
+    else ""
+    rnote <- if (!is.null(step$penalty))
+      sprintf(" [ridge: constraints relaxed, not exact]") else ""
+    attr(diag, "note") <- sprintf(
+      "g (calibration factor) in [%.3f, %.3f]%s%s%s",
+      min(g), max(g), bnote, rnote, note_clust)
+    # Report diagnostics: per-unit g, base weights, distance, conditioning of the
+    # calibration system, and the auxiliaries (for the y-efficiency and overlap
+    # notes). Linear/GREG only (where negatives / conditioning are meaningful).
+    g_unit <- as.numeric(new_w[active] / d)
+    attr(diag, "calibrate") <- list(
+      g = g_unit, d = as.numeric(d), calfun = step$calfun, bounds = step$bounds,
+      cond = tryCatch(kappa(crossprod(X), exact = FALSE), error = function(e) NA_real_),
+      chi2 = sum(d * (g_unit - 1)^2),
+      covars = data[active, all.vars(step$formula), drop = FALSE],
+      formula = step$formula, active_idx = which(active))
+    return(list(weights = new_w, diagnostics = diag))
+  }
+
+  # method == "raking": iterative proportional fitting (IPF)
+
+  # --- tidy `totals`: a LIST of data frames (one per margin) ---
+  if (is.list(step$totals) && !is.data.frame(step$totals) &&
+      length(step$totals) > 0L && is.data.frame(step$totals[[1]])) {
+    mprep <- .prep_raking_margins(step$totals, step$count, data, active)
+    out   <- .raking_calc(mprep, new_w, active, step$maxit, step$tol)
+    return(list(weights = out$weights, diagnostics = out$diagnostics))
+  }
+
+  # --- classic `margins` named list (unchanged behaviour + convergence warn) ---
+  .check_margin_levels(step$margins, data, active)
+  it <- 0L; maxdiff <- Inf
+  while (it < step$maxit && maxdiff >= step$tol) {
+    it <- it + 1L; maxdiff <- 0
+    for (v in names(step$margins)) {
+      target <- step$margins[[v]]
+      f      <- as.character(data[[v]])
+      for (lev in names(target)) {
+        idx <- which(f == lev & active)
+        cur <- sum(new_w[idx])
+        if (cur > 0) {
+          adj        <- target[[lev]] / cur
+          new_w[idx] <- new_w[idx] * adj
+          maxdiff    <- max(maxdiff, abs(adj - 1))
+        }
+      }
+    }
+  }
+  if (maxdiff >= step$tol) {
+    warning(sprintf(
+      paste0("Raking did not converge after %d iterations (max relative change ",
+             "= %.2e, tolerance = %.2e). The returned weights do not fully ",
+             "satisfy all margins. Consider increasing `maxit`, or check that ",
+             "the margin totals are mutually consistent."),
+      it, maxdiff, step$tol), call. = FALSE)
+  }
+  # diagnostics: final target vs achieved
+  diag <- list()
+  for (v in names(step$margins)) {
+    target <- step$margins[[v]]
+    f      <- as.character(data[[v]])
+    for (lev in names(target)) {
+      idx <- which(f == lev & active)
+      diag[[length(diag) + 1]] <- data.frame(
+        variable = v, category = lev, target = target[[lev]],
+        achieved = sum(new_w[idx]), stringsAsFactors = FALSE
+      )
+    }
+  }
+  diag <- do.call(rbind, diag)
+  attr(diag, "iterations") <- it
+  # #5: the iteration skips any cell whose weights sum to <= 0 (e.g. from negative
+  # GREG weights), so `maxdiff` alone can report convergence with that margin
+  # grossly unmet. Verify the achieved totals against the targets: a cell off by
+  # more than a small relative tolerance means the margin was not met.
+  reldev <- abs(diag$achieved - diag$target) / pmax(abs(diag$target), 1)
+  conv   <- (maxdiff < step$tol) && all(is.finite(reldev)) && max(reldev) < 1e-3
+  if (!conv && maxdiff < step$tol) {
+    bad <- diag[!is.finite(reldev) | reldev >= 1e-3, , drop = FALSE]
+    warning(sprintf(paste0("Raking iterations converged but %d margin cell(s) were not met ",
+                          "(e.g. %s = %s: target %s, achieved %s), typically a cell whose ",
+                          "weights sum to <= 0 and cannot be raked. The returned weights do not ",
+                          "satisfy these margins."),
+                    nrow(bad), bad$variable[1], bad$category[1],
+                    format(round(bad$target[1])), format(round(bad$achieved[1]))), call. = FALSE)
+  }
+  attr(diag, "converged") <- conv
+  list(weights = new_w, diagnostics = diag)
+}

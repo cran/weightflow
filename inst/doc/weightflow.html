@@ -477,7 +477,10 @@ the <code>survey</code> package.</p>
 <span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>,</span>
 <span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
 <span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
-<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span></code></pre></div>
 </div>
 <div id="trimming-rounding-rescaling" class="section level3">
 <h3>Trimming, rounding, rescaling</h3>
@@ -513,7 +516,10 @@ consistency with the auxiliary population totals.</p>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)),</span>
 <span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
 <span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  <span class="fu">step_trim_weights</span>() <span class="sc">|&gt;</span></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span></code></pre></div>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span></code></pre></div>
 </div>
 </div>
 <div id="reading-the-cascade-the-design-effect" class="section level2">
@@ -547,7 +553,7 @@ variance inflation:</p>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility (by household_id)</span></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt;   2. drop ineligible</span></span>
 <span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;   3. nonresponse (weighting class, by household_id)</span></span>
-<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   4. within-household selection</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   4. within-cluster selection</span></span>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   5. nonresponse (weighting class)</span></span>
 <span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   6. calibration (raking)</span></span>
 <span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
@@ -587,7 +593,7 @@ variance inflation:</p>
 <span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a><span class="co">#&gt;   West        85      18 1.211765</span></span>
 <span id="cb4-48"><a href="#cb4-48" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.054 -&gt; 1.039   |   n_eff: 346 -&gt; 303</span></span>
 <span id="cb4-49"><a href="#cb4-49" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co">#&gt; --- Step 4: within-household selection ---</span></span>
+<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co">#&gt; --- Step 4: within-cluster selection ---</span></span>
 <span id="cb4-51"><a href="#cb4-51" tabindex="-1"></a><span class="co">#&gt;   using mean_factor min_factor max_factor</span></span>
 <span id="cb4-52"><a href="#cb4-52" tabindex="-1"></a><span class="co">#&gt;  1/prob        2.26          1      9.052</span></span>
 <span id="cb4-53"><a href="#cb4-53" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.039 -&gt; 1.460   |   n_eff: 303 -&gt; 216</span></span>

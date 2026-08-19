@@ -2,7 +2,7 @@
 % Please edit documentation in R/report.R
 \name{report_weighting}
 \alias{report_weighting}
-\title{Build a nice HTML report of the weighting recipe}
+\title{Self-contained HTML quality report for a weighting recipe}
 \usage{
 report_weighting(
   object,
@@ -13,7 +13,8 @@ report_weighting(
   lang = c("en", "es"),
   metadata = NULL,
   replicates = NULL,
-  domains = NULL
+  domains = NULL,
+  y_vars = NULL
 )
 }
 \arguments{
@@ -24,7 +25,8 @@ report_weighting(
 \item{open}{logical; open the file in the browser.}
 
 \item{plots}{logical; add per-step plots (weight before-vs-after scatter and
-adjustment-factor histogram). Uses ggplot2 if installed, else base graphics.}
+adjustment-factor histogram), drawn as self-contained inline SVG (no graphics
+device or extra package required).}
 
 \item{narrative}{logical; add an auto-generated methodological narrative -- an
 executive summary at the top and a natural-language paragraph on each step
@@ -52,15 +54,23 @@ per-domain reliability card. Each term becomes one table (\code{+} = separate
 tables, \code{:} = crossed), showing the active n, sum of weights, CV, Kish
 design effect and effective sample size within each domain. E.g.
 \code{domains = ~ region + region:sex}.}
+
+\item{y_vars}{optional character vector of survey outcome variables. When a
+nonresponse-by-calibration step is present, the auxiliary-quality table adds,
+for each auxiliary, its weighted correlation with each \code{y} among respondents
+(Sarndal-Lundstrom criterion (ii): a good auxiliary also explains the \code{y}).}
 }
 \value{
 (invisibly) the path to the HTML file.
 }
 \description{
-Writes a self-contained HTML file (no dependencies, no server) showing the
-pipeline, the parameters requested at each step, the per-stage summary
-(n, sum, CV, Kish deff, effective n) and per-step diagnostics, and opens it
-in the browser.
+Writes a single, self-contained HTML file documenting how a prepped recipe
+turned the design base weights into the final weights: the cascade, the
+parameters requested at each step, the per-stage weight summary, the
+step-specific diagnostics (calibration, nonresponse, trimming), the fieldwork
+outcome rates and an audit trail. It is the deliverable to attach to a
+methodological report or a weighting annex: everything is inline, so the file
+opens offline and can be archived or emailed as one artifact.
 }
 \examples{
 fitted <- weighting_spec(sample_survey, base_weights = pw) |>

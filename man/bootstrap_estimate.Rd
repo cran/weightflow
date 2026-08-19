@@ -26,7 +26,15 @@ boot_mean(boot, variable)
 A data frame with \code{estimate}, \code{se}, \code{ci_lower}, \code{ci_upper}.
 }
 \description{
-Applies a statistic to the point weights and to every replicate, and
-summarises it with the bootstrap variance \eqn{(1/B)\sum(\theta^*_b -
-\hat\theta)^2}.
+Applies a statistic to the point weights and to every bootstrap replicate, and
+returns the estimate with its bootstrap standard error and a normal confidence
+interval. \code{boot_total()} and \code{boot_mean()} are the two shortcuts you will use
+most: a weighted total and a weighted mean of one column.
+}
+\details{
+The bootstrap variance takes the replicate estimates
+\eqn{\hat\theta^{*}_b}{theta*_b} around the point estimate
+\eqn{\hat\theta}{theta_hat} (the \code{mse = TRUE} convention of \code{survey}), over the
+\eqn{R}{R} valid replicates (a failed replicate is dropped, not counted),
+\deqn{\widehat V_{\mathrm{boot}}(\hat\theta) = \frac{1}{R}\sum_{b=1}^{R}\big(\hat\theta^{*}_b - \hat\theta\big)^2.}{V_boot = (1/R) sum_b (theta*_b - theta_hat)^2.}
 }

@@ -5,8 +5,11 @@
 
 #' Estimate the weighting cascade
 #'
-#' Walks the steps in the order they were added, starting from the base
-#' weights. Each step multiplies the current weight by its adjustment factor.
+#' Runs an inert [weighting_spec()] recipe. Starting from the design base
+#' weights, `prep()` applies each step in the order it was piped, multiplying the
+#' current weight by that step's adjustment factor, and returns an object holding
+#' the weight at every stage, the per-step diagnostics and the quality alerts.
+#' This is the only function that computes weights.
 #'
 #' @param spec a weighting_spec.
 #' @param min_cell_n integer. Minimum number of cases per adjustment cell
@@ -27,6 +30,15 @@
 prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
   if (!inherits(spec, "weighting_spec"))
     stop("`spec` must be a weighting_spec.")
+  warn <- .wf_flag(warn, "warn")                 # "yes"/1/NA would silently disable warnings
+  if (!is.null(min_cell_n) && (!is.numeric(min_cell_n) || length(min_cell_n) != 1L ||
+                               is.na(min_cell_n) || min_cell_n < 0))
+    stop("`min_cell_n` must be NULL (no small-cell check) or a single non-negative number.",
+         call. = FALSE)
+  if (!is.null(max_factor) && (!is.numeric(max_factor) || length(max_factor) != 1L ||
+                               is.na(max_factor) || max_factor <= 0))
+    stop("`max_factor` must be NULL (no large-factor check) or a single positive number.",
+         call. = FALSE)
   data <- spec$data
   w    <- data[[spec$base_weights]]
   attr(data, "weightflow_base_w") <- w     # available to step_trim(reference = "base")
@@ -37,8 +49,16 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
 
   for (i in seq_along(steps)) {
     w_before               <- w
+    .check_step_labelled(steps[[i]], data)
     res                    <- apply_step(steps[[i]], data, w)
     w                      <- res$weights
+    if (any(!is.finite(w)))
+      stop(sprintf(paste0("Step %d (%s) produced %d non-finite weight(s) (Inf/NaN), which ",
+                          "would corrupt every later step and the diagnostics silently. This ",
+                          "usually comes from a zero or missing selection probability, a zero ",
+                          "cell total, or an extreme calibration factor -- check that step's ",
+                          "inputs."),
+                   i, class(steps[[i]])[1], sum(!is.finite(w))), call. = FALSE)
     steps[[i]]$diagnostics <- res$diagnostics
     step_cls  <- class(steps[[i]])[1]
     is_calib  <- inherits(steps[[i]], c("step_calibrate", "step_model_calibration"))
@@ -47,6 +67,8 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
     alerts <- .wf_alerts(w_before, w, res$diagnostics, is_calib, cell_step,
                          min_cell_n = min_cell_n, max_factor = max_factor,
                          step_class = step_cls)
+    ca <- .crossfit_alert(steps[[i]])
+    if (!is.null(ca)) alerts <- c(alerts, ca)
     if (length(alerts)) {
       steps[[i]]$alerts <- alerts
       tagged <- sprintf("[%s] %s", step_cls, alerts)
@@ -67,6 +89,63 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
     ),
     class = c("prepped_weighting_spec", "weighting_spec")
   )
+}
+
+# Quality alert: a flexible learner (tree / forest / boost) used WITHOUT
+# cross-fitting. Same-sample predictions keep each unit in the training set of
+# its own prediction, so the residuals are shrunk by overfitting and the variance
+# can be understated even under recipe-aware replication (re-fitting the learner
+# per replicate does not break that unit-prediction dependence; only sample
+# splitting does). Cross-fitting (crossfit = K) removes it. Applies to
+# step_nonresponse(method = "propensity") and step_model_calibration.
+# Refs: Dagdoug, Goga & Haziza (2023); Chernozhukov et al. (2018).
+.crossfit_alert <- function(step) {
+  msgs     <- character(0)
+  flexible <- c("tree", "forest", "boost")
+  eng <- character(0)
+  if (inherits(step, "step_nonresponse") && identical(step$method, "propensity"))
+    eng <- step$engine
+  else if (inherits(step, "step_model_calibration"))
+    eng <- vapply(step$models, function(m) if (is.null(m$engine)) "glm" else m$engine,
+                  character(1))
+  hit <- intersect(unique(eng), flexible)
+  if (length(hit) && is.null(step$crossfit))
+    msgs <- c(msgs, sprintf(paste0(
+      "Flexible learner (%s) without cross-fitting: same-sample predictions can ",
+      "understate the variance even under recipe-aware replication, because each ",
+      "unit stays in the training set of its own prediction. Set crossfit = 5 to ",
+      "break it (Dagdoug, Goga and Haziza 2023; Chernozhukov et al. 2018)."),
+      paste(hit, collapse = ", ")))
+  # Cross-fitting without a seed draws its folds from the caller's global RNG:
+  # the fold assignment (and thus the result) is not reproducible run to run.
+  if (!is.null(step$crossfit) && is.null(step$crossfit_seed))
+    msgs <- c(msgs, paste0(
+      "cross-fitting without `crossfit_seed` is not reproducible; set `crossfit_seed` ",
+      "for a stable result."))
+  if (length(msgs)) msgs else NULL
+}
+
+# Guard: a haven_labelled (SPSS/Stata) column used in a MODEL FORMULA enters the
+# model.matrix as its numeric codes (1, 2, 3, ...) -- a continuous term, not the
+# categories the user intends -- silently mis-specifying the calibration / model.
+# Cell (`by`) grouping and 0/1 dispositions are fine on labelled vectors (they go
+# by the codes, which is correct there); only formula terms are affected.
+.check_step_labelled <- function(step, data) {
+  fs   <- Filter(function(f) inherits(f, "formula"),
+                 c(list(step$formula), list(step$x_formula),
+                   lapply(step$models, function(m) m$formula)))
+  vars <- unique(unlist(lapply(fs, all.vars)))
+  vars <- intersect(vars, names(data))
+  bad  <- vars[vapply(vars, function(v) inherits(data[[v]], "haven_labelled"),
+                      logical(1))]
+  if (length(bad))
+    stop(sprintf(paste0("Formula variable(s) %s are haven_labelled (from an SPSS/Stata ",
+                        "import). In a model formula they enter as their numeric codes ",
+                        "(1, 2, 3, ...), i.e. a continuous term -- not as categories -- a ",
+                        "silent, semantically wrong calibration/model. Convert them first, ",
+                        "e.g. `data <- haven::as_factor(data)` or `haven::as_factor()` the ",
+                        "specific columns."),
+                 paste(bad, collapse = ", ")), call. = FALSE)
 }
 
 # ---------------------------------------------------------------------------
@@ -91,6 +170,128 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
   # what happened / what was done in the quality report (attention panel + card).
   rec <- attr(diag, "reconcile")
   if (!is.null(rec) && nzchar(rec)) msgs <- c(msgs, rec)
+
+  # An adjustment cell with no units to adjust to (no respondents / all unknown)
+  # gets an NA factor; the affected units were set to weight 0. Surface it.
+  if (!is.null(diag) && is.data.frame(diag) && "factor" %in% names(diag) &&
+      any(is.na(diag$factor)))
+    msgs <- c(msgs, sprintf(
+      paste0("%d adjustment cell(s) had no units to adjust to (no respondents, ",
+             "or all of unknown eligibility); the affected units were set to ",
+             "weight 0. Consider collapsing cells or using a coarser grouping."),
+      sum(is.na(diag$factor))))
+
+  # N4-4: rounding can push a weight whose magnitude is below half the rounding
+  # precision (a small, or negative, calibration weight) to exactly 0 -- the
+  # "dropped" marker -- so the unit silently leaves the active set and
+  # collect_weights(). Surface how many.
+  if (identical(step_class, "step_round")) {
+    zeroed <- sum(.wf_active(w_before) & !.wf_active(w_after))
+    if (zeroed > 0L)
+      msgs <- c(msgs, sprintf(
+        paste0("%d unit(s) were rounded to weight 0 and left the active set (their ",
+               "magnitude was below half the rounding precision, e.g. a small or negative ",
+               "calibration weight); they no longer appear in collect_weights(). Round to ",
+               "more decimals, or resolve those weights before rounding."),
+        zeroed))
+  }
+
+  # Very small response propensities blow up the 1/p weights; flag it.
+  pm <- attr(diag, "p_min")
+  if (!is.null(pm) && is.finite(pm) && pm < 0.01)
+    msgs <- c(msgs, sprintf(
+      paste0("Very small response propensities (min p = %.4f among respondents) ",
+             "produce extreme 1/p weights (up to %.0fx). Check the propensity model, ",
+             "or trim with step_trim_weights()."),
+      pm, 1 / pm))
+
+  # Propensity classes collapsed: the fitted propensities were ~constant, so the
+  # requested num_classes quantile cut-points could not be formed and every unit
+  # went to a single adjustment class. Surface it (the correction did nothing).
+  if (isTRUE(attr(diag, "classes_collapsed")))
+    msgs <- c(msgs, paste0(
+      "The response propensities were nearly constant, so the requested ",
+      "num_classes could not be formed (the quantile cut-points collapsed); ",
+      "all units were placed in a single adjustment class -- the class-based ",
+      "correction had no effect. Drop num_classes (use 1/p weighting) or revise ",
+      "the propensity model."))
+
+  # Miscalibrated response propensities distort the 1/p weights: flag a
+  # calibration slope far from 1 (weighted logistic of response on logit(p-hat)).
+  cs <- attr(diag, "propensity")$cal_slope
+  if (!is.null(cs) && is.finite(cs) && abs(cs - 1) > 0.3)
+    msgs <- c(msgs, sprintf(
+      paste0("The response propensities look miscalibrated (calibration slope %.2f, ",
+             "ideal 1). For 1/p weighting the probabilities must be honest, not just ",
+             "discriminative. Set num_classes (e.g. 5) to bin by propensity quantiles ",
+             "-- which use only the ranking of the propensities and so are robust to ",
+             "this shrinkage -- or review the propensity model."),
+      cs))
+
+  # Nonresponse by calibration: non-positive g-weights imply an invalid response
+  # probability (<= 0 or undefined) and a non-positive weight; surface it.
+  cnr <- attr(diag, "calib_nr")
+  if (!is.null(cnr) && !is.null(cnr$g) && length(cnr$g)) {
+    gg <- cnr$g[is.finite(cnr$g)]
+    if (length(gg) && sum(gg <= 0) > 0)
+      msgs <- c(msgs, sprintf(
+        paste0("%d respondent(s) have a non-positive calibration g-weight (implied ",
+               "response probability <= 0 or undefined). The nonresponse-calibration ",
+               "auxiliaries are ill-behaved; use a bounded distance (logit) or a ",
+               "different auxiliary vector."), sum(gg <= 0)))
+  }
+
+  # Ill-conditioned linear/GREG calibration: near-collinear auxiliaries make the
+  # calibration factors unstable; point to the ridge penalty.
+  cbd <- attr(diag, "calibrate")
+  if (!is.null(cbd) && !is.null(cbd$cond) && is.finite(cbd$cond) && cbd$cond > 1e10)
+    msgs <- c(msgs, sprintf(
+      paste0("The calibration system is ill-conditioned (condition number %.1e): ",
+             "near-collinear auxiliaries can make the weights unstable. Drop a ",
+             "redundant auxiliary, or set penalty = <lambda> (ridge)."), cbd$cond))
+  # Negative calibration weights: a valid but unusual output of unbounded linear
+  # calibration. They stay active (in the cascade, collect_weights() and the deff),
+  # so the totals are honest -- but surface them, since a negative survey weight is
+  # rarely wanted and makes the estimator erratic.
+  if (!is.null(cbd) && !is.null(cbd$g)) {
+    nneg <- sum(cbd$g < 0, na.rm = TRUE)
+    if (nneg > 0L)
+      msgs <- c(msgs, sprintf(
+        paste0("%d unit(s) received a NEGATIVE calibration weight. They remain active (counted ",
+               "in the totals and collect_weights()), but a negative weight is rarely intended; ",
+               "set `bounds` to keep the calibration factor positive. Note that the Kish design ",
+               "effect assumes non-negative weights, so with negatives present its value is ",
+               "inflated and not interpretable as an effective-sample summary."),
+        nneg))
+  }
+
+  # Trimming that could not preserve the weight total: the requested bounds were
+  # infeasible, so part of the trimmed mass was absorbed instead of redistributed
+  # and the point estimates shift. Covers step_trim and step_trim_weights (the
+  # range-restricted step_trim_calibrated preserves the totals by construction).
+  tr <- attr(diag, "trim_rec")
+  if (!is.null(tr) && !identical(tr$redistribute, "calibration") &&
+      !is.null(tr$wb) && !is.null(tr$wa)) {
+    sb <- sum(tr$wb, na.rm = TRUE); sa <- sum(tr$wa, na.rm = TRUE)
+    if (is.finite(sb) && sb > 0 && abs(sb - sa) > 0.01 * sb)
+      msgs <- c(msgs, sprintf(
+        paste0("Trimming %s the weight total by %.1f%% (from %s to %s): the mass was not ",
+               "preserved (infeasible bounds absorbed, or a floor above the cap). The point ",
+               "estimates shift; check the bounds, or use step_trim_calibrated() to trim while ",
+               "preserving totals."),
+        if (sa < sb) "reduced" else "increased", abs(100 * (sa - sb) / sb),
+        format(round(sb), big.mark = ","), format(round(sa), big.mark = ",")))
+  }
+
+  # Partial-response households treated as whole-household nonresponse: flag how
+  # many responding members were discarded (so the assumption is visible).
+  ph <- attr(diag, "partial_hh")
+  if (!is.null(ph) && ph > 0)
+    msgs <- c(msgs, sprintf(
+      paste0("%d household(s) responded only partially and were treated as ",
+             "whole-household nonresponse, discarding %d responding member(s). ",
+             "If you meant person-level nonresponse, drop `cluster`."),
+      ph, attr(diag, "discarded_resp")))
 
   if (isTRUE(is_calib)) {
     neg <- sum(w_after < 0, na.rm = TRUE)
@@ -150,6 +351,11 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
 
 #' Extract the data with the computed weights
 #'
+#' Returns the sample as a `data.frame` with the final analysis weight attached
+#' as a column, ready to hand to an estimation routine. By default the units that
+#' left the cascade (weight 0) are dropped, so what comes back is the responding,
+#' in-scope sample and its weights.
+#'
 #' @param object a prepped object (output of prep()).
 #' @param drop_zero logical. If TRUE, drops rows with final weight 0
 #'   (ineligible / nonresponse). Default TRUE.
@@ -165,13 +371,22 @@ collect_weights <- function(object, drop_zero = TRUE,
                             keep_intermediate = FALSE, weight_name = ".weight") {
   if (!inherits(object, "prepped_weighting_spec"))
     stop("Call prep() first.")
+  weight_name <- .wf_outname(weight_name, "weight_name")   # 1 / NA / "" would silently overwrite
   out <- object$data
+  if (weight_name %in% names(out))
+    warning(sprintf(paste0("Column '%s' already in the data was overwritten with the ",
+                           "computed weights; pass weight_name= to keep both."), weight_name),
+            call. = FALSE)
   out[[weight_name]] <- object$final_weight
 
   if (keep_intermediate) {
     h <- object$history
     for (nm in names(h)) out[[paste0(".wt_", nm)]] <- h[[nm]]
   }
-  if (drop_zero) out <- out[object$final_weight > 0, , drop = FALSE]
+  # which() (not a bare logical) so any NA weight is dropped rather than inserting
+  # a phantom all-NA row (which later breaks summary()). drop_zero drops the exact
+  # zeros (the "dropped" marker); negative weights are active and are kept, so the
+  # data.frame total matches sum(final_weight).
+  if (drop_zero) out <- out[which(.wf_active(object$final_weight)), , drop = FALSE]
   out
 }

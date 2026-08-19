@@ -601,32 +601,35 @@ variable the sample carries.</p>
 <span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> disposition <span class="sc">==</span> <span class="st">&quot;eligible respondent&quot;</span>,</span>
 <span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a>                   <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
 <span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
-<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a></span>
-<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a>fitted</span>
-<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
-<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt; Data    : 417 cases</span></span>
-<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
-<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
-<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility (by household_id)</span></span>
-<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;   2. drop ineligible</span></span>
-<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;   3. nonresponse (weighting class, by household_id)</span></span>
-<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;   4. within-household selection</span></span>
-<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;   5. nonresponse (weighting class)</span></span>
-<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
-<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
-<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt;                             stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
-<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt;                              base      417    2182  0.238     1.057   395</span></span>
-<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt;  stage_1_step_unknown_eligibility      394    2182  0.234     1.055   374</span></span>
-<span id="cb4-40"><a href="#cb4-40" tabindex="-1"></a><span class="co">#&gt;      stage_2_step_drop_ineligible      365    2023  0.232     1.054   346</span></span>
-<span id="cb4-41"><a href="#cb4-41" tabindex="-1"></a><span class="co">#&gt;          stage_3_step_nonresponse      315    2023  0.197     1.039   303</span></span>
-<span id="cb4-42"><a href="#cb4-42" tabindex="-1"></a><span class="co">#&gt;        stage_4_step_select_within      315    4611  0.678     1.460   216</span></span>
-<span id="cb4-43"><a href="#cb4-43" tabindex="-1"></a><span class="co">#&gt;          stage_5_step_nonresponse      209    4611  0.714     1.510   138</span></span>
-<span id="cb4-44"><a href="#cb4-44" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-45"><a href="#cb4-45" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
-<span id="cb4-46"><a href="#cb4-46" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
-<span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span></code></pre></div>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a>fitted</span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt; Data    : 417 cases</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility (by household_id)</span></span>
+<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;   2. drop ineligible</span></span>
+<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;   3. nonresponse (weighting class, by household_id)</span></span>
+<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt;   4. within-cluster selection</span></span>
+<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt;   5. nonresponse (weighting class)</span></span>
+<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
+<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
+<span id="cb4-40"><a href="#cb4-40" tabindex="-1"></a><span class="co">#&gt;                             stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
+<span id="cb4-41"><a href="#cb4-41" tabindex="-1"></a><span class="co">#&gt;                              base      417    2182  0.238     1.057   395</span></span>
+<span id="cb4-42"><a href="#cb4-42" tabindex="-1"></a><span class="co">#&gt;  stage_1_step_unknown_eligibility      394    2182  0.234     1.055   374</span></span>
+<span id="cb4-43"><a href="#cb4-43" tabindex="-1"></a><span class="co">#&gt;      stage_2_step_drop_ineligible      365    2023  0.232     1.054   346</span></span>
+<span id="cb4-44"><a href="#cb4-44" tabindex="-1"></a><span class="co">#&gt;          stage_3_step_nonresponse      315    2023  0.197     1.039   303</span></span>
+<span id="cb4-45"><a href="#cb4-45" tabindex="-1"></a><span class="co">#&gt;        stage_4_step_select_within      315    4611  0.678     1.460   216</span></span>
+<span id="cb4-46"><a href="#cb4-46" tabindex="-1"></a><span class="co">#&gt;          stage_5_step_nonresponse      209    4611  0.714     1.510   138</span></span>
+<span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-48"><a href="#cb4-48" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
+<span id="cb4-49"><a href="#cb4-49" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
+<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span></code></pre></div>
 <p>The stage summary shows how the active sample and the weight total
 change as each disposition is handled: unresolved weight is moved onto
 resolved cases, ineligibles drop out, and respondents are inflated to
@@ -640,7 +643,7 @@ carry the nonrespondents.</p>
 <span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt;   1. unknown eligibility (by household_id)</span></span>
 <span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt;   2. drop ineligible</span></span>
 <span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt;   3. nonresponse (weighting class, by household_id)</span></span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt;   4. within-household selection</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt;   4. within-cluster selection</span></span>
 <span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt;   5. nonresponse (weighting class)</span></span>
 <span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
@@ -678,7 +681,7 @@ carry the nonrespondents.</p>
 <span id="cb5-45"><a href="#cb5-45" tabindex="-1"></a><span class="co">#&gt;   West        85      18 1.211765</span></span>
 <span id="cb5-46"><a href="#cb5-46" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.054 -&gt; 1.039   |   n_eff: 346 -&gt; 303</span></span>
 <span id="cb5-47"><a href="#cb5-47" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb5-48"><a href="#cb5-48" tabindex="-1"></a><span class="co">#&gt; --- Step 4: within-household selection ---</span></span>
+<span id="cb5-48"><a href="#cb5-48" tabindex="-1"></a><span class="co">#&gt; --- Step 4: within-cluster selection ---</span></span>
 <span id="cb5-49"><a href="#cb5-49" tabindex="-1"></a><span class="co">#&gt;   using mean_factor min_factor max_factor</span></span>
 <span id="cb5-50"><a href="#cb5-50" tabindex="-1"></a><span class="co">#&gt;  1/prob        2.26          1      9.052</span></span>
 <span id="cb5-51"><a href="#cb5-51" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.039 -&gt; 1.460   |   n_eff: 303 -&gt; 216</span></span>
@@ -738,10 +741,13 @@ there look like this:</p>
 <span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> responded, <span class="at">method =</span> <span class="st">&quot;weighting_class&quot;</span>,</span>
 <span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>                   <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;region&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;age_grp&quot;</span>)) <span class="sc">|&gt;</span></span>
 <span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a></span>
-<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co"># same weights as the disposition-based version</span></span>
-<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="fu">all.equal</span>(fitted<span class="sc">$</span>final_weight, fitted2<span class="sc">$</span>final_weight)</span>
-<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt; Warning: Missing values in the cell variable(s) `by` were grouped into a</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt; &#39;(missing)&#39; cell. Those units are adjusted within their own cell; recode the</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; NAs if that is not intended.</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co"># same weights as the disposition-based version</span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="fu">all.equal</span>(fitted<span class="sc">$</span>final_weight, fitted2<span class="sc">$</span>final_weight)</span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>From here the recipe would continue with calibration and, optionally,
 trimming; those stages are covered in the calibration and
 getting-started articles. The point of this article is upstream of them:
