@@ -5,10 +5,11 @@ has_survey <- requireNamespace("survey", quietly = TRUE)
 has_srvyr  <- requireNamespace("srvyr", quietly = TRUE) &&
               requireNamespace("dplyr", quietly = TRUE)
 
-## ----recipe-------------------------------------------------------------------
+## ----recipe, warning = FALSE--------------------------------------------------
 dat <- sample_one
 dat$age_grp <- cut(dat$age, c(0, 30, 45, 60, Inf),
                    labels = c("18-30", "31-45", "46-60", "60+"))
+dat$f <- 0.15                    # illustrative first-stage sampling fraction (used later)
 
 spec <- weighting_spec(dat, base_weights = pw) |>
   step_unknown_eligibility(unknown = unknown_elig, by = "region",
@@ -55,10 +56,24 @@ d_rep <- srvyr::as_survey_rep(df, weights = .weight,
                               scale = 1 / attr(df, "R"), rscales = 1, mse = TRUE)
 srvyr::summarise(d_rep, mean_income = srvyr::survey_mean(income, na.rm = TRUE))
 
-## ----jackknife----------------------------------------------------------------
+## ----jackknife, warning = FALSE-----------------------------------------------
 jk <- jackknife_weights(spec, strata = "region", psu = "psu", progress = FALSE)
 jk
 
 jack_mean(jk,  "income")     # mean income, with the JKn variance
 jack_total(jk, "employed")   # total employed
+
+## ----fpc, warning = FALSE-----------------------------------------------------
+boot0 <- bootstrap_weights(spec, replicates = 200, strata = "region",
+                           psu = "psu", seed = 2024, progress = FALSE)
+bootf <- bootstrap_weights(spec, replicates = 200, strata = "region",
+                           psu = "psu", fpc = "f", seed = 2024, progress = FALSE)
+c(no_fpc = boot_total(boot0, "employed")$se,
+  fpc    = boot_total(bootf, "employed")$se)   # the correction lowers the SE
+
+## ----ci-----------------------------------------------------------------------
+emp <- function(w, d) sum(w * d$employed, na.rm = TRUE)
+bootstrap_estimate(boot, emp)                          # normal (default)
+bootstrap_estimate(boot, emp, ci_type = "t")           # t: wider, uses df
+bootstrap_estimate(boot, emp, ci_type = "percentile")  # empirical quantiles
 

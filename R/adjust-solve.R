@@ -65,6 +65,21 @@
          call. = FALSE)
   as.integer(x)
 }
+.wf_num <- function(x, arg, min = -Inf, max = Inf) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x < min || x > max)
+    stop(sprintf("`%s` must be a single finite number%s; got %s.", arg,
+                 if (is.finite(min) || is.finite(max))
+                   sprintf(" in [%s, %s]", format(min), format(max)) else "",
+                 deparse(x)[1]), call. = FALSE)
+  as.numeric(x)
+}
+.wf_id <- function(x, arg = "id") {
+  if (is.null(x)) return(NULL)
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(trimws(x)))
+    stop(sprintf("`%s` must be a single non-empty string (not NA or \"\"); got %s.",
+                 arg, deparse(x)[1]), call. = FALSE)
+  x
+}
 .wf_level <- function(level) {
   if (!is.numeric(level) || length(level) != 1L || is.na(level) || level <= 0 || level >= 1)
     stop("`level` must be a single number strictly between 0 and 1 (e.g. 0.95, not 95).",
@@ -95,20 +110,26 @@
 }
 
 # Build a grouping factor from the `by` columns -----------------------------
-.make_cells <- function(data, by, n) {
+.make_cells <- function(data, by, n, active = NULL) {
   if (is.null(by)) return(factor(rep("(all)", n)))
   if (!length(by))
     stop(paste0("`by` has length 0. Use `by = NULL` for no grouping; a zero-length `by` ",
                 "(e.g. from names(x)[grepl(...)] matching nothing) would silently skip the ",
                 "whole step."), call. = FALSE)
-  na_any <- FALSE
+  na_unit <- logical(n)                       # which units have an NA in any cell variable
   parts <- lapply(by, function(v) {
     if (!v %in% names(data)) stop(sprintf("Cell variable '%s' not found.", v))
-    x <- as.character(data[[v]])
-    if (anyNA(x)) { na_any <<- TRUE; x[is.na(x)] <- "(missing)" }  # explicit, not the ambiguous "NA"
+    x  <- as.character(data[[v]])
+    na <- is.na(x)
+    if (any(na)) { na_unit <<- na_unit | na; x[na] <- "(missing)" }  # explicit, not the ambiguous "NA"
     x
   })
-  if (na_any)
+  # Only warn about NA cells among the units this step actually acts on. Units
+  # already dropped earlier in the cascade (weight 0: ineligible, unknown, whole-
+  # household nonresponse) commonly lack later-collected variables (sex, age), and
+  # flagging their NAs is a false alarm -- they take no part in this adjustment.
+  flag <- if (is.null(active)) na_unit else (na_unit & as.logical(active))
+  if (any(flag))
     warning(paste0("Missing values in the cell variable(s) `by` were grouped into a ",
                    "'(missing)' cell. Those units are adjusted within their own cell; ",
                    "recode the NAs if that is not intended."), call. = FALSE)

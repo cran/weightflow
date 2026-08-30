@@ -6,7 +6,13 @@
 \alias{boot_mean}
 \title{Bootstrap estimate, standard error and confidence interval}
 \usage{
-bootstrap_estimate(boot, statistic, level = 0.95)
+bootstrap_estimate(
+  boot,
+  statistic,
+  level = 0.95,
+  ci_type = c("normal", "t", "percentile"),
+  df = NULL
+)
 
 boot_total(boot, variable)
 
@@ -18,7 +24,14 @@ boot_mean(boot, variable)
 \item{statistic}{a function \verb{function(w, data)} returning a numeric scalar
 (or vector) given a weight vector and the data.}
 
-\item{level}{confidence level for the (normal) interval.}
+\item{level}{confidence level for the interval.}
+
+\item{ci_type}{interval type: "normal" (default, z-based), "t" (Student t with
+the design degrees of freedom, wider and less anticonservative with few PSUs),
+or "percentile" (empirical quantiles of the valid replicates).}
+
+\item{df}{degrees of freedom for the t interval; \code{NULL} (default) uses the
+design df stored on the object (total PSUs minus strata).}
 
 \item{variable}{name of the variable to estimate.}
 }
@@ -38,3 +51,21 @@ The bootstrap variance takes the replicate estimates
 \eqn{R}{R} valid replicates (a failed replicate is dropped, not counted),
 \deqn{\widehat V_{\mathrm{boot}}(\hat\theta) = \frac{1}{R}\sum_{b=1}^{R}\big(\hat\theta^{*}_b - \hat\theta\big)^2.}{V_boot = (1/R) sum_b (theta*_b - theta_hat)^2.}
 }
+\examples{
+spec <- weighting_spec(sample_survey, base_weights = pw) |>
+  step_calibrate(method = "raking",
+                 margins = list(region = c(table(population$region))))
+boot <- bootstrap_weights(spec, replicates = 50, strata = "region",
+                          psu = "psu", seed = 1)
+# a t interval with the design degrees of freedom (safer with few PSUs)
+bootstrap_estimate(boot, function(w, d) sum(w * d$responded), ci_type = "t")
+}
+\seealso{
+Other variance estimation:
+\code{\link[=as_svydesign]{as_svydesign()}},
+\code{\link[=bootstrap_weights]{bootstrap_weights()}},
+\code{\link[=collect_replicate_weights]{collect_replicate_weights()}},
+\code{\link[=jackknife_estimate]{jackknife_estimate()}},
+\code{\link[=jackknife_weights]{jackknife_weights()}}
+}
+\concept{variance estimation}

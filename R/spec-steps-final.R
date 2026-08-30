@@ -1,5 +1,72 @@
 # further step constructors: model-assisted calibration, assert, weight trimming (Tukey/Potter), calibration-preserving trimming, rescale.
 
+#' Use a weighted survey as the calibration reference instead of a frame
+#'
+#' Wraps a reference-survey microdata `data.frame` together with its design
+#' weights so it can be passed as the `population` argument of
+#' [step_model_calibration()] (and any step that takes a `population` frame).
+#' The calibration totals are then the *weighted* sums over the reference survey
+#' -- an estimate of the population totals -- instead of unweighted sums over a
+#' full frame. This is the model-assisted / two-survey setup: fit the model on
+#' your sample, project it onto a larger reference survey, and calibrate to the
+#' weighted totals of the projection (Wu and Sitter 2001; Kim and Rao 2012).
+#'
+#' A reference survey with all weights equal to 1 reproduces the plain-frame
+#' behaviour exactly. To propagate the reference survey's own sampling variance
+#' into the recipe-aware bootstrap, pass its replicate weights through
+#' `replicates`: each bootstrap replicate then re-estimates the totals from the
+#' paired reference replicate (Opsomer and Erciulescu 2021), so the extra
+#' variance from estimating the totals is captured. Without `replicates` the
+#' totals are treated as fixed (a reasonable approximation when the reference is
+#' much larger than the sample, and the same assumption made when calibrating to
+#' another survey's published totals).
+#'
+#' @param data a `data.frame` of reference-survey microdata, with the columns
+#'   used in `x_formula` and the model predictors.
+#' @param weights either the name (string) of a positive weight column in `data`,
+#'   or a numeric vector with one weight per row.
+#' @param replicates optional numeric matrix (or data.frame) of replicate weights
+#'   for the reference survey -- one row per reference unit, one column per
+#'   replicate -- used to propagate the reference sampling variance through
+#'   [bootstrap_weights()]. `NULL` (default) treats the totals as fixed. Note that
+#'   only [bootstrap_weights()] pairs the reference replicates and propagates this
+#'   variance; [jackknife_weights()] treats the estimated totals as fixed even when
+#'   `replicates` is supplied, so use the bootstrap when this component matters.
+#' @return `data` tagged so that `step_model_calibration()` weights its totals by
+#'   `weights`. It is still an ordinary `data.frame`.
+#' @seealso [step_model_calibration()]
+#' @examples
+#' ref <- reference_sample(population, weights = rep(1, nrow(population)))
+#' @export
+reference_sample <- function(data, weights, replicates = NULL) {
+  if (!is.data.frame(data))
+    stop("`data` must be a data.frame (the reference survey microdata).", call. = FALSE)
+  w <- if (is.character(weights) && length(weights) == 1L) {
+    if (!weights %in% names(data))
+      stop(sprintf("Weights column '%s' not found in the reference `data`.", weights), call. = FALSE)
+    data[[weights]]
+  } else weights
+  if (!is.numeric(w) || length(w) != nrow(data))
+    stop("`weights` must be the name of a weight column, or a numeric vector with ",
+         "one value per row of `data`.", call. = FALSE)
+  if (anyNA(w) || any(!is.finite(w)) || any(w <= 0))
+    stop("Reference-sample weights must be finite and strictly positive ",
+         "(no NA, zero or negative weights).", call. = FALSE)
+  attr(data, "wf_ref_weights") <- as.numeric(w)
+  if (!is.null(replicates)) {
+    R <- as.matrix(replicates)
+    if (!is.numeric(R) || nrow(R) != nrow(data) || ncol(R) < 2L)
+      stop("`replicates` must be a numeric matrix (or data.frame) with one row per ",
+           "reference unit and at least 2 replicate-weight columns.", call. = FALSE)
+    if (anyNA(R) || any(!is.finite(R)) || any(R < 0))
+      stop("Reference replicate weights must be finite and non-negative (no NA).", call. = FALSE)
+    dimnames(R) <- NULL
+    attr(data, "wf_ref_replicates") <- R
+  }
+  class(data) <- unique(c("wf_reference_sample", class(data)))
+  data
+}
+
 #' Model-assisted calibration (Wu and Sitter 2001)
 #'
 #' Fits a working model for each study variable, predicts it over the whole
@@ -27,7 +94,10 @@
 #' @param models named list of models created with y_model(). The names label
 #'   the prediction constraints.
 #' @param population population data.frame with the auxiliary and predictor
-#'   columns (the y variables are not needed; they are predicted). Always
+#'   columns (the y variables are not needed; they are predicted). May instead be
+#'   a weighted reference survey wrapped with [reference_sample()], in which case
+#'   the totals are the design-weighted sums over that survey (estimated totals)
+#'   rather than unweighted sums over a full frame. Always
 #'   required: the model-assisted block predicts each y over every population
 #'   unit, which cannot be done from aggregated totals.
 #' @param x_totals optional population totals for the consistency auxiliaries
@@ -110,12 +180,16 @@
 #' w <- fit_hh$final_weight
 #' max(tapply(w[w > 0], sample_survey$household_id[w > 0],
 #'            function(x) diff(range(x))))    # 0: one weight per household
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_model_calibration <- function(spec, x_formula, models, population,
                                    x_totals = NULL, count = "Freq",
                                    cluster = NULL, equal_within_cluster = FALSE,
-                                   crossfit = NULL, crossfit_seed = NULL) {
+                                   crossfit = NULL, crossfit_seed = NULL, id = NULL) {
   if (!inherits(spec, "weighting_spec"))
     stop("The first argument must be a weighting_spec.")
   if (missing(x_formula) || missing(models) || missing(population))
@@ -123,8 +197,24 @@ step_model_calibration <- function(spec, x_formula, models, population,
   if (!inherits(x_formula, "formula")) stop("`x_formula` must be a formula ~ x.")
   if (!is.list(models) || is.null(names(models)))
     stop("`models` must be a named list of y_model().")
+  # Each element must be a y_model() result, not a bare formula (a common slip:
+  # models = list(y = y ~ x)), which would crash later reaching for $engine.
+  if (!all(vapply(models, function(m) inherits(m, "wf_y_model"), logical(1))))
+    stop("Each element of `models` must be a y_model() result, e.g. list(income = y_model(income ~ age + sex)).",
+         call. = FALSE)
   if (!is.data.frame(population))
     stop("`population` must be a data.frame with the auxiliaries/predictors for the whole population.")
+  equal_within_cluster <- .wf_flag(equal_within_cluster, "equal_within_cluster")
+  id <- .wf_id(id)
+  if (!is.null(crossfit)) {
+    if (!is.numeric(crossfit) || length(crossfit) != 1L || !is.finite(crossfit) ||
+        crossfit < 2 || crossfit != round(crossfit))
+      stop("`crossfit` must be NULL or a single integer >= 2 (number of folds).", call. = FALSE)
+    crossfit <- as.integer(crossfit)
+  }
+  if (!is.null(crossfit_seed) &&
+      (!is.numeric(crossfit_seed) || length(crossfit_seed) != 1L || !is.finite(crossfit_seed)))
+    stop("`crossfit_seed` must be NULL or a single finite number.", call. = FALSE)
   if (equal_within_cluster && is.null(cluster))
     stop("equal_within_cluster = TRUE requires `cluster`.")
   if (!is.null(crossfit) && (!is.numeric(crossfit) || crossfit < 2))
@@ -151,7 +241,7 @@ step_model_calibration <- function(spec, x_formula, models, population,
     ),
     class = c("step_model_calibration", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Optional step: assertions / checkpoint --------------------------------
@@ -169,15 +259,28 @@ step_model_calibration <- function(spec, x_formula, models, population,
 #'   ratio (per active unit).
 #' @param min_n_eff numeric or NULL. Minimum acceptable effective sample size.
 #' @param on_fail "error" (stop the cascade) or "warning".
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out; defaults to a derived `"<class>_<k>"`.
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_assert(max_deff = 5, on_fail = "warning") |> prep()
 #' @return The input `weighting_spec` with this checkpoint appended to its
 #'   recipe. The check is recorded only; it is evaluated when `prep()` is called
 #'   and does not modify the weights.
+#' @family weighting steps
 step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
-                        min_n_eff = NULL, on_fail = c("error", "warning")) {
+                        min_n_eff = NULL, on_fail = c("error", "warning"), id = NULL) {
   on_fail <- match.arg(on_fail)
+  # Validate the thresholds: a non-numeric threshold (e.g. "500") would be
+  # compared lexicographically at apply time, silently inverting the assertion.
+  .chk_thr <- function(x, nm) {
+    if (!is.null(x) && (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x <= 0))
+      stop(sprintf("`%s` must be a single positive finite number (or NULL).", nm),
+           call. = FALSE)
+  }
+  .chk_thr(max_deff, "max_deff")
+  .chk_thr(max_weight_ratio, "max_weight_ratio")
+  .chk_thr(min_n_eff, "min_n_eff")
   step <- structure(
     list(
       label            = "assert (checkpoint)",
@@ -188,7 +291,7 @@ step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
     ),
     class = c("step_assert", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Optional step: automatic weight trimming ------------------------------
@@ -228,12 +331,16 @@ step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
 #'   step_trim_weights(method = "potter") |> prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_trim_weights <- function(spec, lower = 1, upper = NULL,
                               method = c("tukey", "potter"),
                               redistribute = c("proportional", "uniform"),
-                              strict = TRUE, maxit = 50L) {
+                              strict = TRUE, maxit = 50L, id = NULL) {
   method       <- match.arg(method)
   redistribute <- match.arg(redistribute)
   # M3: this step applies a single absolute band to every unit; it has no `by`.
@@ -241,12 +348,18 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
   # recycled to a scalar and silently applied to everyone. Reject it and point to
   # step_trim_calibrated(), which does take per-subgroup bounds through `by`.
   chk_scalar <- function(x, nm) {
-    if (!is.null(x) && (length(x) != 1L || !is.null(names(x))))
+    if (is.null(x)) return(invisible())
+    if (length(x) != 1L || !is.null(names(x)))
       stop(sprintf(paste0("`%s` in step_trim_weights() must be a single unnamed number; ",
                           "got %s. For per-group bounds use step_trim_calibrated(by = ...)."),
                    nm, deparse(x)[1]), call. = FALSE)
+    if (!is.numeric(x) || is.na(x))
+      stop(sprintf("`%s` in step_trim_weights() must be a single number (Inf/-Inf allowed for no bound); got %s.",
+                   nm, deparse(x)[1]), call. = FALSE)
   }
   chk_scalar(lower, "lower"); chk_scalar(upper, "upper")
+  if (!is.null(lower) && !is.null(upper) && lower >= upper)
+    stop("`lower` must be strictly below `upper`.", call. = FALSE)
   step <- structure(
     list(
       label  = if (method == "potter") "auto weight trimming (Potter MSE)"
@@ -260,7 +373,7 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
     ),
     class = c("step_trim_weights", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Optional step: trimmed (range-restricted) calibration -----------------
@@ -285,7 +398,9 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
 #' and a warning is raised.
 #'
 #' This step is meant to run **after** a `step_calibrate()`: it acts on the
-#' positive incoming weights and leaves dropped units (weight 0) alone.
+#' active incoming weights (including any negative weights an unbounded linear
+#' calibration produced, which it can bring back into `[lower, upper]`) and
+#' leaves dropped units (weight 0) alone.
 #'
 #' @param spec a weighting_spec.
 #' @param formula the auxiliaries whose calibration totals must be preserved
@@ -313,6 +428,14 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
 #'   (default) trims each unit on its own.
 #' @param maxit integer. Maximum iterations for the bounded solver.
 #' @param tol numeric. Convergence tolerance for the bounded solver.
+#' @references Deville, J.-C. and Sarndal, C.-E. (1992). Calibration estimators in
+#'   survey sampling. Journal of the American Statistical Association, 87, 376-382.
+#'   \doi{10.2307/2290268}. The totals-preserving trimming solves a bounded
+#'   (range-restricted) calibration with the truncated distances introduced there.
+#'   Folsom, R. E. and Singh, A. C. (2000). The generalized exponential model for
+#'   sampling weight calibration for extreme values, nonresponse and
+#'   poststratification. Proceedings of the ASA Survey Research Methods Section,
+#'   598-603, formalises the same range-restricted (generalized exponential) family.
 #' @examples
 #' # calibrate, then trim the calibrated weights into [5.5, 13.5] without breaking
 #' # the region/sex totals (the calibrated weights of sample_survey live in ~[5.4, 14])
@@ -322,16 +445,34 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
 #'                                 sex    = c(table(population$sex)))) |>
 #'   step_trim_calibrated(~ region + sex, lower = 5.5, upper = 13.5) |>
 #'   prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_trim_calibrated <- function(spec, formula, lower = NULL, upper = NULL,
                                  calfun = c("linear", "raking"), by = NULL,
                                  cluster = NULL, equal_within_cluster = FALSE,
-                                 maxit = 100L, tol = 1e-7) {
+                                 maxit = 100L, tol = 1e-7, id = NULL) {
   calfun <- match.arg(calfun)
+  equal_within_cluster <- .wf_flag(equal_within_cluster, "equal_within_cluster")
+  id <- .wf_id(id)
   if (missing(formula) || !inherits(formula, "formula"))
     stop("`formula` must be a formula naming the auxiliaries to preserve, ",
          "e.g. ~ region + age_group.")
+  maxit <- .wf_count(maxit, "maxit", min = 1L)
+  if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) || tol <= 0)
+    stop("`tol` must be a single positive finite number.", call. = FALSE)
+  # Validate the bounds are numeric BEFORE the lower >= upper comparison, which
+  # would otherwise compare strings lexicographically (e.g. lower = "5").
+  chk_bnd <- function(b, nm) {
+    if (is.null(b)) return(invisible())
+    if (!is.numeric(b) || anyNA(b))
+      stop(sprintf(paste0("`%s` must be a numeric vector of bounds (a single number, or ",
+                          "one per `by` group); got %s."), nm, deparse(b)[1]), call. = FALSE)
+  }
+  chk_bnd(lower, "lower"); chk_bnd(upper, "upper")
   if (is.null(lower) && is.null(upper))
     stop("Supply at least one of `lower` / `upper` (the absolute weight bounds).")
   # `lower`/`upper` may be a single number (same bound for every unit) or, with
@@ -364,7 +505,7 @@ step_trim_calibrated <- function(spec, formula, lower = NULL, upper = NULL,
     ),
     class = c("step_trim_calibrated", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Optional step: rescale / normalize weights ----------------------------
@@ -385,9 +526,13 @@ step_trim_calibrated <- function(spec, formula, lower = NULL, upper = NULL,
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_rescale(to = "n") |> prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
-step_rescale <- function(spec, to = c("n", "total"), total = NULL, by = NULL) {
+#' @family weighting steps
+step_rescale <- function(spec, to = c("n", "total"), total = NULL, by = NULL, id = NULL) {
   to <- match.arg(to)
   if (to == "total" && is.null(total)) stop("to = 'total' requires `total`.")
   # A4: `by` only makes sense with to = "n" (each group -> its own active size).
@@ -415,5 +560,5 @@ step_rescale <- function(spec, to = c("n", "total"), total = NULL, by = NULL) {
     ),
     class = c("step_rescale", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }

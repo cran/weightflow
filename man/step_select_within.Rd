@@ -4,7 +4,13 @@
 \alias{step_select_within}
 \title{Within-cluster selection adjustment}
 \usage{
-step_select_within(spec, prob = NULL, n_eligible = NULL, n_selected = NULL)
+step_select_within(
+  spec,
+  prob = NULL,
+  n_eligible = NULL,
+  n_selected = NULL,
+  id = NULL
+)
 }
 \arguments{
 \item{spec}{a weighting_spec.}
@@ -24,6 +30,10 @@ single number (same subsample size in every household) or an unquoted column
 (subsample size varying by household). The weight is multiplied by
 n_eligible / n_selected (equivalent to prob = n_selected/n_eligible).
 Defaults to 1. Only used together with \code{n_eligible}.}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -55,3 +65,21 @@ weighting_spec(df, base_weights = pw) |>
 weighting_spec(df, base_weights = pw) |>
   step_select_within(n_eligible = n_elig, n_selected = 2)
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_round]{step_round()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim]{step_trim()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}},
+\code{\link[=step_unknown_eligibility]{step_unknown_eligibility()}}
+}
+\concept{weighting steps}

@@ -4,7 +4,7 @@
 \alias{step_unknown_eligibility}
 \title{Unknown-eligibility adjustment}
 \usage{
-step_unknown_eligibility(spec, unknown, by = NULL, cluster = NULL)
+step_unknown_eligibility(spec, unknown, by = NULL, cluster = NULL, id = NULL)
 }
 \arguments{
 \item{spec}{a weighting_spec.}
@@ -21,6 +21,10 @@ its (uniform) weight, the weight of unknown-eligibility clusters is
 redistributed among the known ones, and the adjusted weight is assigned to
 every member. Use this when unknown-eligibility units have no roster (one
 row per address) while resolved units are expanded by person.}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -49,3 +53,21 @@ weighting_spec(sample_survey, base_weights = pw) |>
   step_unknown_eligibility(unknown = unknown_elig, by = "region",
                            cluster = "household_id")
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_round]{step_round()}},
+\code{\link[=step_select_within]{step_select_within()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim]{step_trim()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}}
+}
+\concept{weighting steps}

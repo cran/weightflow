@@ -48,9 +48,9 @@
   if (inherits(step, "step_unknown_eligibility"))
     return(.t("unknown-eligibility adjustment", "ajuste por elegibilidad desconocida", lang))
   if (inherits(step, "step_drop_ineligible"))
-    return(.t("removal of ineligible units", "eliminaci\u00f3n de unidades no elegibles", lang))
+    return(.t("exclusion of ineligible units", "eliminaci\u00f3n de unidades no elegibles", lang))
   if (inherits(step, "step_select_within"))
-    return(.t("within-cluster selection", "selecci\u00f3n dentro del conglomerado", lang))
+    return(.t("within-cluster selection adjustment", "ajuste por selecci\u00f3n dentro del conglomerado", lang))
   if (inherits(step, "step_nonresponse")) {
     m <- step$method %||% "weighting_class"
     if (identical(m, "calibration")) {
@@ -69,35 +69,68 @@
     # they enter the HTML: .step_short() feeds the exec summary, pipeline diagram,
     # per-stage table, anchors and titles, so an unescaped column name is an XSS
     # vector in a report built from third-party data. Everything else is escaped.
-    cl  <- .html_escape(step$cluster)
     eng <- .html_escape(step$engine)
-    lvl <- if (!is.null(step$cluster))
-             .t(sprintf(", at the %s level", cl),
-                sprintf(", a nivel %s", cl), lang) else ""
-    base <- switch(m,
-      weighting_class = .t("nonresponse adjustment (weighting classes",
-                           "ajuste por no respuesta (clases de ponderaci\u00f3n", lang),
-      propensity = .t(sprintf("nonresponse adjustment (propensity, %s", eng),
-                      sprintf("ajuste por no respuesta (propensi\u00f3n, %s", eng), lang))
-    return(paste0(base, lvl, ")"))
+    # Humanise the cluster into a level name for the prose; the raw column name
+    # (e.g. household_id) stays in the step details, not in the summary label.
+    # household_id -> household, so two nonresponse steps (household vs person)
+    # still read as distinct.
+    pretty <- if (!is.null(step$cluster))
+      .html_escape(gsub("_", " ", sub("_id$", "", step$cluster))) else ""
+    lvl_en <- if (!is.null(step$cluster)) sprintf("%s-level ", pretty) else ""
+    lvl_es <- if (!is.null(step$cluster)) sprintf(" a nivel %s", pretty) else ""
+    eng_en <- switch(step$engine %||% "logit",
+      logit = "logistic model", tree = "regression tree",
+      forest = "random forest", boost = "gradient boosting", eng)
+    eng_es <- switch(step$engine %||% "logit",
+      logit = "modelo log&iacute;stico", tree = "&aacute;rbol de regresi&oacute;n",
+      forest = "random forest", boost = "gradient boosting", eng)
+    if (identical(m, "propensity"))
+      return(.t(sprintf("%sresponse-propensity adjustment (%s)", lvl_en, eng_en),
+                sprintf("ajuste por propensi&oacute;n de respuesta (%s)%s", eng_es, lvl_es), lang))
+    return(.t(sprintf("%snonresponse adjustment using weighting classes", lvl_en),
+              sprintf("ajuste por no respuesta con clases de ponderaci&oacute;n%s", lvl_es), lang))
   }
   if (inherits(step, "step_calibrate")) {
     vp <- .vars_phrase(.aux_vars(step), lang); greg <- identical(step$method, "linear")
     return(if (nzchar(vp))
-      .t(sprintf("%scalibration to %s", if (greg) "GREG " else "", vp),
-         sprintf("calibraci\u00f3n %sa %s", if (greg) "GREG " else "", vp), lang)
+      .t(sprintf("%scalibration to %s totals", if (greg) "GREG " else "", vp),
+         sprintf("calibraci\u00f3n %sa los totales de %s", if (greg) "GREG " else "", vp), lang)
       else .t("calibration to population totals", "calibraci\u00f3n a totales poblacionales", lang))
   }
   if (inherits(step, "step_model_calibration"))
     return(.t("model-assisted calibration", "calibraci\u00f3n asistida por modelo", lang))
   if (inherits(step, "step_trim_calibrated"))
-    return(.t("calibration-preserving trimming", "recorte que preserva la calibraci\u00f3n", lang))
+    return(.t("calibration-preserving weight trimming", "recorte de pesos que preserva la calibraci\u00f3n", lang))
   if (inherits(step, "step_trim_weights"))
     return(.t("weight trimming", "recorte de pesos", lang))
-  if (inherits(step, "step_round"))  return(.t("rounding", "redondeo", lang))
+  if (inherits(step, "step_round"))  return(.t("weight rounding", "redondeo de pesos", lang))
   if (inherits(step, "step_rescale")) return(.t("rescaling", "reescalado", lang))
   if (inherits(step, "step_assert")) return(.t("quality checkpoint", "punto de control", lang))
+  if (inherits(step, "step_nr_sensitivity"))
+    return(.t("nonresponse sensitivity", "sensibilidad a la no respuesta", lang))
+  if (inherits(step, "step_subsample"))
+    return(.t("second-phase subsampling", "submuestreo de segunda fase", lang))
   .html_escape(step$label)
+}
+
+# When a calibration step's targets come from reference_sample() the control
+# totals are estimates, not census figures. State that, and how their sampling
+# variance is handled: propagated through paired replicates, or treated as fixed.
+.ref_totals_phrase <- function(step, lang) {
+  pop <- step$population
+  if (is.null(pop) || !inherits(pop, "wf_reference_sample")) return("")
+  n_ref   <- length(attr(pop, "wf_ref_weights"))
+  has_rep <- !is.null(attr(pop, "wf_ref_replicates"))
+  vclause <- if (has_rep)
+    .t("Because the totals are estimates, their sampling variability can be propagated through the recipe-aware bootstrap, where each replicate re-estimates the totals from the paired reference replicate (Opsomer and Erciulescu 2021); the delete-a-PSU jackknife has no such pairing and treats the totals as fixed.",
+       "Como los totales son estimaciones, su variabilidad muestral puede propagarse por el bootstrap recipe-aware, donde cada r&eacute;plica reestima los totales desde la r&eacute;plica pareada de la referencia (Opsomer y Erciulescu 2021); el jackknife borra-una-UPM no tiene ese pareo y trata los totales como fijos.", lang)
+  else
+    .t("The totals are estimates but were treated as fixed (no reference replicate weights supplied), so the reported variance omits their sampling error and may be understated; pass replicates to reference_sample() to propagate it.",
+       "Los totales son estimaciones pero se trataron como fijos (sin pesos r&eacute;plica de la referencia), as&iacute; que la varianza reportada omite su error muestral y puede quedar subestimada; pase r&eacute;plicas a reference_sample() para propagarlo.", lang)
+  .t(sprintf(" The control totals are not census figures: they were estimated from a reference survey (n = %s). %s",
+             format(n_ref, big.mark = ",", scientific = FALSE), vclause),
+     sprintf(" Los totales de control no son de censo: se estimaron a partir de una encuesta de referencia (n = %s). %s",
+             format(n_ref, big.mark = ",", scientific = FALSE), vclause), lang)
 }
 
 # The per-step methodological paragraph.
@@ -188,12 +221,12 @@
     txt <- paste0(.t(
       sprintf("The weights were calibrated to the known population totals of %s using %s%s%s%s%s, so the weighted sample reproduces those totals while staying as close as possible to the incoming weights (Deville and Sarndal 1992).", vlab, meth, dist, bnd, integ, ridge),
       sprintf("Los pesos se calibraron a los totales poblacionales conocidos de %s mediante %s%s%s%s%s, de modo que la muestra ponderada reproduce esos totales manteni\u00e9ndose lo m\u00e1s cerca posible de los pesos de entrada (Deville y Sarndal 1992).", vlab, meth, dist, bnd, integ, ridge),
-      lang), " ", .deff_phrase(de1, de2, lang))
+      lang), " ", .deff_phrase(de1, de2, lang), .ref_totals_phrase(step, lang))
   } else if (inherits(step, "step_model_calibration")) {
     txt <- paste0(.t(
       "Model-assisted (Wu-Sitter) calibration was applied: predictions of the outcome model were used as auxiliaries and calibrated to their population totals, borrowing strength from the predictive model.",
       "Se aplic\u00f3 calibraci\u00f3n asistida por modelo (Wu-Sitter): las predicciones del modelo de resultado se usaron como auxiliares y se calibraron a sus totales poblacionales, aprovechando la fuerza del modelo predictivo.",
-      lang), " ", .deff_phrase(de1, de2, lang))
+      lang), " ", .deff_phrase(de1, de2, lang), .ref_totals_phrase(step, lang))
   } else if (inherits(step, "step_trim_calibrated")) {
     # Preserved totals are ONLY the formula's auxiliaries; `by` is the subgroup
     # for the bounds, not a preserved total, so it must not appear in `vlab`.
@@ -230,7 +263,10 @@
       sprintf("Los pesos calibrados se recortaron %s preservando los totales de calibraci\u00f3n de %s (una recalibraci\u00f3n acotada que conserva los totales%s), de modo que el recorte reduce los pesos extremos sin romper las restricciones de calibraci\u00f3n.", rlab, vlab, integ),
       lang), " ", .deff_phrase(de1, de2, lang))
   } else if (inherits(step, "step_trim_weights")) {
-    rng <- sprintf("[%s, %s]", format(step$lower),
+    # lower = NULL is legal (no floor). format(NULL) is character(0), which would
+    # collapse the whole paragraph to length 0 and crash the report -> show "-Inf".
+    rng <- sprintf("[%s, %s]",
+                   if (is.null(step$lower)) "-Inf" else format(step$lower),
                    if (is.null(step$upper)) .t("auto", "autom\u00e1tico", lang) else format(step$upper))
     # only an AUTOMATIC cutoff has a rule to name; with manual bounds there is none
     rlab <- if (is.null(step$upper)) {
@@ -262,6 +298,27 @@
   } else if (inherits(step, "step_assert")) {
     txt <- .t("A quality checkpoint verified the weight diagnostics (design effect, weight ratio, effective sample size) against the configured thresholds.",
               "Un punto de control de calidad verific\u00f3 los diagn\u00f3sticos de los pesos (efecto de dise\u00f1o, raz\u00f3n de pesos, tama\u00f1o efectivo) contra los umbrales configurados.", lang)
+  } else if (inherits(step, "step_pseudoweight")) {
+    vp  <- .vars_phrase(all.vars(step$formula), lang)
+    cf  <- if (!is.null(step$crossfit))
+      .t(sprintf(" with %d-fold cross-fitting", step$crossfit),
+         sprintf(" con validaci\u00f3n cruzada de %d particiones", step$crossfit), lang) else ""
+    cls <- if (!is.null(step$num_classes))
+      .t(sprintf(" The propensities were grouped into %d classes to stabilise the pseudo-weight.", step$num_classes),
+         sprintf(" Las propensiones se agruparon en %d clases para estabilizar el pseudo-peso.", step$num_classes), lang)
+      else ""
+    txt <- .t(
+      sprintf("The non-probability sample was pooled with the probability reference and a participation-propensity model (<strong>%s</strong> algorithm%s) was fitted over %s. Each non-probability unit received the pseudo-weight (1 - p)/p, the participation odds, which inflates it to the population so the weights sum to the reference's estimated population size (Elliott and Valliant 2017); the reference trains the model and is then dropped.%s Common support between the sample and the reference is the central assumption; see the propensity diagnostics below.", step$engine, cf, vp, cls),
+      sprintf("La muestra no probabil\u00edstica se combin\u00f3 con la referencia probabil\u00edstica y se ajust\u00f3 un modelo de propensi\u00f3n de participaci\u00f3n (algoritmo <strong>%s</strong>%s) sobre %s. Cada unidad no probabil\u00edstica recibi\u00f3 el pseudo-peso (1 - p)/p, las probabilidades relativas de participaci\u00f3n, que la expanden a la poblaci\u00f3n de modo que los pesos suman el tama\u00f1o poblacional estimado por la referencia (Elliott y Valliant 2017); la referencia entrena el modelo y luego se descarta.%s El soporte com\u00fan entre la muestra y la referencia es el supuesto central; ver los diagn\u00f3sticos de propensi\u00f3n abajo.", step$engine, cf, vp, cls),
+      lang)
+  } else if (inherits(step, "step_nr_sensitivity")) {
+    txt <- .t("A proxy pattern-mixture sensitivity analysis (Andridge and Little 2011) was run. It does not change the weights: it reports how far the study mean could move under nonignorable nonresponse, as an ignorance interval indexed by a single parameter. See the sensitivity block.",
+              "Se corri\u00f3 un an\u00e1lisis de sensibilidad por mixtura de patrones con proxy (Andridge y Little 2011). No cambia los pesos: informa cu\u00e1nto podr\u00eda moverse la media bajo no respuesta no ignorable, como un intervalo de ignorancia indexado por un solo par\u00e1metro. Ver el bloque de sensibilidad.", lang)
+  } else if (inherits(step, "step_subsample")) {
+    txt <- .t(
+      "A second phase of sampling was undone: the subsampled units had their weight multiplied by the inverse of the phase-2 selection probability, so they represent the whole first-phase sample, and the not-subsampled units left the cascade. When the variance is estimated by bootstrap, weightflow uses the two-phase coupling V = V1 + V2 &mdash; the first-phase sampling variance plus the expected conditional variance of the phase-2 subsample &mdash; which a single-phase bootstrap would understate.",
+      "Se deshizo una segunda fase de muestreo: a las unidades submuestreadas se les multiplic&oacute; el peso por el inverso de la probabilidad de selecci&oacute;n de fase 2, para que representen a toda la muestra de primera fase, y las no submuestreadas salieron de la cascada. Cuando la varianza se estima por bootstrap, weightflow usa el acople de dos fases V = V1 + V2 &mdash; la varianza de muestreo de fase 1 m&aacute;s la varianza condicional esperada del submuestreo de fase 2 &mdash; que un bootstrap de una sola fase subestimar&iacute;a.",
+      lang)
   } else return("")
 
   if (!nzchar(txt)) return("")

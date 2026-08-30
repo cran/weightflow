@@ -11,7 +11,8 @@ step_trim(
   reference = c("base", "median", "value"),
   redistribute = TRUE,
   by = NULL,
-  maxit = 50L
+  maxit = 50L,
+  id = NULL
 )
 }
 \arguments{
@@ -19,9 +20,11 @@ step_trim(
 
 \item{max_ratio}{number. Upper cap. Its meaning depends on \code{reference}. E.g.
 with reference = "base" and max_ratio = 4, no weight may exceed 4 times its
-design weight.}
+design weight. Must be greater than 1 for reference = "base"/"median" (a
+multiplier) and greater than 0 for reference = "value" (an absolute weight).}
 
-\item{min_ratio}{number or NULL. Lower floor (same units as max_ratio).}
+\item{min_ratio}{number or NULL. Lower floor (same units as max_ratio); if
+supplied, must be greater than 0 and below \code{max_ratio}.}
 
 \item{reference}{"base" (multiple of each unit's base weight),
 "median" (multiple of the median of current weights) or
@@ -34,6 +37,10 @@ afterwards you can use FALSE: calibration restores the totals.}
 \item{by}{character. Groups within which to redistribute (optional).}
 
 \item{maxit}{integer. Maximum cap+redistribution iterations.}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -56,3 +63,21 @@ whether trimming is worth it.
 weighting_spec(sample_survey, base_weights = pw) |>
   step_trim(max_ratio = 3, reference = "base")
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_round]{step_round()}},
+\code{\link[=step_select_within]{step_select_within()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}},
+\code{\link[=step_unknown_eligibility]{step_unknown_eligibility()}}
+}
+\concept{weighting steps}

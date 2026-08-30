@@ -7,7 +7,14 @@
 # total given as `domain, value`) collapses to the single number for `d`.
 .split_totals_by_domain <- function(totals, byvar, count, d) {
   split_one <- function(t) {
-    if (!is.data.frame(t)) return(t)
+    # A bare number here is a national continuous total under `by`: returning it
+    # as-is would apply the SAME total to every domain (each domain calibrates to
+    # it, so the global total is over-counted). Require the per-domain form.
+    if (!is.data.frame(t))
+      stop(sprintf(paste0("A continuous calibration total given as a single number cannot be used ",
+                          "with `by = \"%s\"`: the same national total would be applied to every ",
+                          "domain. Give it as a data frame with columns `%s` and `value` (one total ",
+                          "per domain)."), byvar, byvar), call. = FALSE)
     if (!byvar %in% names(t))
       stop(sprintf("The calibration totals are missing the domain column '%s'.", byvar))
     sub <- t[as.character(t[[byvar]]) == d, , drop = FALSE]
@@ -145,9 +152,79 @@
 }
 
 # --- Calibration -----------------------------------------------------------
+# When the step carries a reference_sample() as `population`, derive the
+# calibration targets (margins / totals) from its design-weighted sums. In a
+# bootstrap replicate, use the paired replicate column of the reference so its
+# sampling variance propagates (Opsomer & Erciulescu 2021). Point prep / no
+# replicate weights -> the point reference weights (targets treated as fixed).
+.wf_calib_ref_targets <- function(step, data) {
+  pop     <- step$population
+  w_ref   <- attr(pop, "wf_ref_weights")
+  if (is.null(w_ref))
+    stop("`population` must be a reference_sample() (its weights are missing).", call. = FALSE)
+  rep_mat <- attr(pop, "wf_ref_replicates")
+  ridx    <- attr(data, "wf_replicate_idx")
+  if (!is.null(rep_mat) && !is.null(ridx))
+    w_ref <- rep_mat[, ((ridx - 1L) %% ncol(rep_mat)) + 1L]
+  vars <- all.vars(step$formula)
+  miss <- setdiff(vars, names(pop))
+  if (length(miss))
+    stop(sprintf("Calibration variable(s) not found in the reference sample: %s.",
+                 paste(miss, collapse = ", ")), call. = FALSE)
+  if (anyNA(pop[vars]))
+    stop("The reference sample has missing values (NA) in the calibration variables; ",
+         "every reference unit needs them complete. Impute or drop them first.", call. = FALSE)
+  # Drop unused factor levels: a level present in the factor definition but with no
+  # reference unit (common with a reference subset by region) would otherwise give
+  # an NA target that crashes the raking IPF. droplevels() keeps every row, so the
+  # reference weights stay aligned.
+  pop <- droplevels(pop)
+  if (step$method == "raking") {
+    step$margins <- stats::setNames(lapply(vars, function(v) {
+      t <- tapply(w_ref, pop[[v]], sum); m <- stats::setNames(as.numeric(t), names(t))
+      m <- m[!is.na(m)]
+      if (length(m) == 0L || any(m <= 0))
+        stop(sprintf(paste0("The reference sample gives a non-positive calibration total for a ",
+                            "level of '%s'; a category with zero total reference weight cannot be a ",
+                            "raking target. Check the reference coverage for that variable."), v),
+             call. = FALSE)
+      m
+    }), vars)
+  } else if (step$method == "poststratify") {
+    agg <- stats::aggregate(list(Freq = w_ref), by = as.list(pop[vars]), FUN = sum)
+    step$totals <- agg; step$count <- "Freq"
+  } else {                                   # linear / GREG
+    X <- stats::model.matrix(step$formula, data = pop)
+    if (nrow(X) != length(w_ref))
+      stop("The reference sample has missing values (NA) in `formula`; every ",
+           "reference unit needs complete auxiliaries.", call. = FALSE)
+    step$totals <- stats::setNames(as.numeric(colSums(X * w_ref)), colnames(X))
+  }
+  step
+}
+
+# Integrative calibration (equal_within_cluster) promises ONE weight per cluster.
+# That is only well defined when the incoming weights are already constant within
+# each cluster: the final weight is weight x cluster g-factor, so non-constant
+# incoming weights make members of the same cluster end up different, silently
+# breaking the promise. Refuse up front (fix C3). Shared by every integrative path.
+.wf_assert_uniform_within_cluster <- function(d, cl, cluster_name) {
+  nonunif <- tapply(d, cl, function(z) (max(z) - min(z)) > 1e-9 * max(abs(z), 1))
+  if (any(nonunif, na.rm = TRUE))
+    stop(sprintf(paste0("`equal_within_cluster = TRUE` needs one weight per cluster, but the ",
+                        "pre-calibration weights are NOT constant within %d of %d '%s' cluster(s). ",
+                        "The final weights would differ between members of the same cluster ",
+                        "(final = weight x cluster g-factor), breaking the one-weight-per-cluster ",
+                        "promise. Review the upstream step that made the within-cluster weights ",
+                        "differ, or drop `equal_within_cluster`."),
+                 sum(nonunif, na.rm = TRUE), length(nonunif), cluster_name), call. = FALSE)
+  invisible(TRUE)
+}
+
 apply_step.step_calibrate <- function(step, data, w) {
   active <- .wf_active(w)
   new_w  <- w
+  if (!is.null(step$population)) step <- .wf_calib_ref_targets(step, data)
 
   if (!is.null(step$by)) return(.calibrate_by_domain(step, data, w))
 
@@ -173,7 +250,7 @@ apply_step.step_calibrate <- function(step, data, w) {
       if (!is.na(fac)) new_w[idx] <- new_w[idx] * fac
       diag[[length(diag) + 1]] <- data.frame(
         variable = v, category = lev, target = target[[lev]],
-        prev_total = cur, factor = fac, stringsAsFactors = FALSE
+        prev_total = cur, factor = fac, n = length(idx), stringsAsFactors = FALSE
       )
     }
     return(list(weights = new_w, diagnostics = do.call(rbind, diag)))
@@ -254,15 +331,7 @@ apply_step.step_calibrate <- function(step, data, w) {
       # up with DIFFERENT final weights and the promise is silently broken. Refuse
       # up front and tell the user to look at the upstream step, rather than
       # returning per-member-varying weights that only look like one-per-cluster.
-      nonunif <- tapply(d, cl, function(z) (max(z) - min(z)) > 1e-9 * max(abs(z), 1))
-      if (any(nonunif, na.rm = TRUE))
-        stop(sprintf(paste0("`equal_within_cluster = TRUE` needs one weight per cluster, but the ",
-                          "pre-calibration base weights are NOT constant within %d of %d '%s' ",
-                          "cluster(s). The final weights would differ between members of the same ",
-                          "cluster (final = base x household g-factor), breaking the one-weight-per-",
-                          "cluster promise. Review the upstream step that made the within-cluster ",
-                          "weights differ, or drop `equal_within_cluster`."),
-                   sum(nonunif, na.rm = TRUE), length(nonunif), step$cluster), call. = FALSE)
+      .wf_assert_uniform_within_cluster(d, cl, step$cluster)
       Xbar <- rowsum(X, group = cl)[hh, , drop = FALSE] / n_h   # household MEANS
       # (arithmetic mean: matches survey's aggregate.stage to machine precision;
       # valid because the within-cluster weights are now guaranteed constant.)
@@ -376,7 +445,7 @@ apply_step.step_calibrate <- function(step, data, w) {
       idx <- which(f == lev & active)
       diag[[length(diag) + 1]] <- data.frame(
         variable = v, category = lev, target = target[[lev]],
-        achieved = sum(new_w[idx]), stringsAsFactors = FALSE
+        achieved = sum(new_w[idx]), n = length(idx), stringsAsFactors = FALSE
       )
     }
   }

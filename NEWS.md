@@ -1,3 +1,31 @@
+# weightflow 1.2.0
+
+## New features
+
+* **Two-phase (double) sampling.** `step_subsample()` records a second phase of sampling (a subsample drawn for a costlier follow-up), and `bootstrap_weights()` then returns the two-phase variance `V = V1 + V2` -- the phase-1 sampling variance plus the phase-2 conditional variance a single-phase bootstrap would miss. Covers a Poisson second phase nested in the first; calibrating the subsample to first-phase totals (the two-phase regression estimator, Fuller 1998) is done by composing with a `reference_sample()`. **`two_phase_variance()`** splits the estimate's variance into its phase-1 and phase-2 components (`V1`, `V2`, and the share `V2/V`), turning the coupling into an operational read of whether a denser subsample would pay off. The HTML report now explains the subsample step (in English and Spanish) and its `V = V1 + V2` logic. Validated against Monte Carlo; see `vignette("two-phase-sampling")`.
+* **Non-probability samples.** `weighting_spec(base_weights = NULL, nonprob = TRUE)` starts an opt-in / volunteer / river sample, and `step_pseudoweight()` estimates each unit's participation propensity against a `reference_sample()` and assigns the inverse-propensity pseudo-weight (Elliott and Valliant 2017). Can be combined with calibration to the reference for a doubly robust estimate.
+* **`step_nr_sensitivity()` / `nr_sensitivity()`** add a sensitivity analysis for nonignorable nonresponse or selection (proxy pattern-mixture model, Andridge and Little 2011), reporting an *ignorance interval* over a single sensitivity parameter; the report gains a matching block.
+* **`data_defect()`** brings the data-defect view of Meng (2018) to non-probability samples: the effective sample size across a grid of plausible outcome-participation correlations (an ignorance range, not a single number).
+* **`write_recipe()` / `read_recipe()`** serialize the recipe (the method, not the data) to a human-readable, versionable YAML file and read it back into an inspectable manifest or an executable `weighting_spec`. Needs the `yaml` package.
+* **`domain_summary(min_n_eff = )`** turns the per-domain reliability read into an explicit publication gate (a `publishable` column and a warning for domains below the threshold, pointing to `as_sae_input()`).
+* **Confidentiality tools for public-use files.** `collect_replicate_weights(scramble = TRUE)` hides the sampling design behind the exported replicate weights (variance unchanged), and `disclosure_risk()` flags weight outliers within a publication cell.
+* **`as_sae_input()`** exports, per domain, the direct estimate, its recipe-aware design SE, the effective sample size and a CV rating, in the shape a Fay-Herriot model consumes -- a bridge to the SAE packages (`emdi`, `sae`, `hbsae`) without fitting any model.
+* **Calibrate to a reference survey.** `reference_sample()` lets `step_calibrate()` and `step_model_calibration()` calibrate to a weighted reference survey instead of a full population frame; passing its replicate weights propagates the reference's sampling variance through the bootstrap (Opsomer and Erciulescu 2021), and the report states when control totals are estimated rather than census figures.
+* **`weighting_alerts()` / `has_alerts()`** read the quality incidents recorded by `prep()`; every incident now lands in `$alerts`, a single reliable channel for programmatic quality control even under suppressed warnings.
+* **`bootstrap_weights(fpc = )`** adds a finite-population correction (column, scalar, or per-stratum vector) folded into the Rao-Wu rescaling (Rao, Wu and Yue 1992; Beaumont and Patak 2012); matters for the high sampling fractions common in LatAm household surveys. `fpc = 0` / `NULL` is the with-replacement bootstrap.
+* **`t` and percentile confidence intervals** for `bootstrap_estimate()` (and `t` for `jackknife_estimate()`), carrying the design degrees of freedom so the interval is not anticonservative with few PSUs. Default stays `"normal"`.
+* **Stable step ids.** Every `step_*()` gains an `id` (with a unique derived default), shown in the recipe print-out and usable to select a step in `collect_step_detail()`.
+
+## Bug fixes
+
+* Nonresponse, eligibility and weight-trimming steps now build their `by`-cells over the units still active, so cases dropped earlier in the cascade no longer raise spurious `(missing)`-cell warnings; the response-rate card likewise ignores out-of-scope cases with a missing disposition rather than counting them as nonresponse.
+* Household-level nonresponse modelling now reports the same tiny-propensity and calibration diagnostics as the person-level path.
+* **Behaviour change:** the mean estimators and replicate-weight exports keep active negative weights (a valid GREG output) rather than dropping them, matching the totals estimators and the survey exports; estimates and standard errors may shift accordingly.
+* Stricter, earlier argument validation across the step constructors and estimators, with clearer messages (out-of-range or non-numeric arguments, duplicated calibration-total names, negative model weights, blank stratum/PSU ids) instead of later cryptic errors.
+* Assorted robustness fixes for malformed or edge-case inputs (missing calibration auxiliaries, empty or degenerate cells, open trimming bounds), each covered by a regression test.
+* Report accuracy and honesty fixes: no vacuous checklist claims, clearer per-step descriptions, and formatting/translation fixes.
+* Documentation: an argument-correspondence table (`?weightflow-concepts`), a quality-alerts catalogue (`?weightflow-alerts`), and `@family` cross-links.
+
 # weightflow 1.1.0
 
 ## New features

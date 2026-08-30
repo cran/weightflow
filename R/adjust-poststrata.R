@@ -56,6 +56,18 @@
       paste(missing_cols, collapse = ", "),
       paste(names(data), collapse = ", ")))
 
+  # Cell variables must be complete: format() turns NA into the string "NA", so a
+  # missing value would silently match a literal "NA" category in the totals (a
+  # typical CSV round-trip) and be calibrated as a real cell. Guard NA up front,
+  # like the classic and the model-calibration paths already do.
+  for (v in vars) {
+    if (anyNA(data[[v]][active]))
+      stop(sprintf(paste0("The post-stratification variable '%s' has missing values (NA) in the ",
+                          "sample. Missing values cannot form a post-stratum: recode the NAs into an ",
+                          "explicit category (and give it a control total) or drop those units before ",
+                          "calibrating."), v), call. = FALSE)
+  }
+
   key_of <- function(df, vars) {
     # Numeric categories: format WITHOUT scientific notation and consistently for
     # integer vs double, so 100000 in the totals matches 100000L in the data
@@ -63,7 +75,13 @@
     # to both the totals and the sample through this same function, so they align.
     parts <- lapply(vars, function(v) {
       x <- df[[v]]
-      if (is.numeric(x)) format(x, scientific = FALSE, trim = TRUE) else as.character(x)
+      # Format each value INDEPENDENTLY: a vectorised format() applies a common
+      # width/decimals to the whole vector, so format(c(1, 2)) is "1","2" but
+      # format(c(1, 1.5, 2)) is "1.0","1.5","2.0". If the totals carry a level
+      # (e.g. 1.5) absent from the sample, the shared vector would stop matching.
+      if (is.numeric(x))
+        vapply(x, function(z) format(z, scientific = FALSE, trim = TRUE), character(1))
+      else as.character(x)
     })
     do.call(paste, c(parts, sep = "\r"))
   }
@@ -145,6 +163,7 @@
 
   idx_by <- split(which(active), skey[active])      # active rows per cell key, once
   diag <- vector("list", nrow(cells))
+  zeroed <- character(0)                             # cells zeroed by a 0 population total
   for (i in seq_len(nrow(cells))) {
     key    <- cells$.key[i]
     target <- cells$.Freq[i]
@@ -152,15 +171,25 @@
     cur <- sum(new_w[idx])
     fac <- if (cur > 0) target / cur else NA_real_
     if (!is.na(fac)) new_w[idx] <- new_w[idx] * fac
+    if (isTRUE(target == 0) && cur > 0 && length(idx) > 0L)
+      zeroed <- c(zeroed, gsub("\r", " x ", key))
     diag[[i]] <- data.frame(
       variable   = paste(prep$vars, collapse = " x "),
       category   = gsub("\r", " x ", key),
       target     = target,
       prev_total = cur,
       factor     = fac,
+      n          = length(idx),        # active sample units in the cell (min_cell_n alert)
       stringsAsFactors = FALSE
     )
   }
+  if (length(zeroed))
+    warning(sprintf(paste0("Post-stratification: %d cell(s) with a population total of 0 sent their ",
+                          "sample units to weight 0 (%s). Those units leave the cascade -- this is a ",
+                          "0 control total, not an ordinary nonresponse/ineligibility drop; check the ",
+                          "totals if that cell should not be empty."),
+                   length(zeroed),
+                   paste(utils::head(zeroed, 5L), collapse = "; ")), call. = FALSE)
   list(weights = new_w, diagnostics = do.call(rbind, diag))
 }
 
@@ -245,13 +274,36 @@
         category = gsub("\r", " x ", key),
         target   = m$cells$.Freq[i],
         achieved = sum(new_w[idx]),
+        n        = length(idx),          # active sample units in the cell (min_cell_n alert)
         stringsAsFactors = FALSE
       )
     }
   }
   diag <- do.call(rbind, diag)
   attr(diag, "iterations") <- it
-  attr(diag, "converged")  <- (maxdiff < tol)
+  # Post-verification (as in the classic raking, fix #5): converging on the
+  # sweep-to-sweep change does not guarantee the margins are met. A cell whose
+  # weight sum stays <= 0 (e.g. after an unbounded linear calibration) is skipped
+  # every sweep, contributing nothing to maxdiff, so `converged` could be TRUE
+  # with that margin still off. Check the achieved totals against the targets.
+  # A Rule-2 cell (a population cell with NO unit in the sample, already reported)
+  # has n = 0 and achieved = 0, so it would fail this check spuriously. Exclude it:
+  # it is a coverage gap, not a raking failure.
+  pc <- if ("n" %in% names(diag)) diag$n > 0 else rep(TRUE, nrow(diag))
+  rel_dev <- abs(diag$achieved - diag$target) / (abs(diag$target) + 1)
+  targets_ok <- if (any(pc)) max(rel_dev[pc]) <= 1e-3 else TRUE   # same tol as the classic post-check
+  attr(diag, "converged") <- (maxdiff < tol) && targets_ok
+  if ((maxdiff < tol) && !targets_ok) {                 # silent-miss case
+    off <- which(rel_dev > 1e-3 & pc)
+    k   <- seq_len(min(3L, length(off)))
+    warning(sprintf(paste0(
+      "Raking stabilised but %d margin cell(s) are not met (max relative deviation ",
+      "= %.2e). This usually means a cell has a non-positive weight sum (e.g. after ",
+      "an unbounded linear calibration) and was skipped every sweep. Cells: %s."),
+      length(off), max(rel_dev[pc]),
+      paste(sprintf("%s=%s", diag$variable[off][k], diag$category[off][k]), collapse = ", ")),
+      call. = FALSE)
+  }
   if (!is.null(rec$note)) attr(diag, "reconcile") <- rec$note
   list(weights = new_w, diagnostics = diag)
 }
@@ -290,6 +342,19 @@
 
   X  <- stats::model.matrix(formula, data = data[active, , drop = FALSE])
   cn <- colnames(X)
+
+  # NA in a counts column would make that margin's N NA, drop it from the
+  # reconciliation, and later crash at rec$factors[[v]] with "subscript out of
+  # bounds". Reject it early with a clear message (as the post-stratification
+  # path does), before the size is computed.
+  for (v in names(totals)) {
+    t <- totals[[v]]
+    if (is.data.frame(t) && count %in% names(t) &&
+        anyNA(suppressWarnings(as.numeric(t[[count]]))))
+      stop(sprintf(paste0("The totals for '%s' have missing or non-numeric values in ",
+                          "the counts column '%s'; provide a finite count for every ",
+                          "category."), v, count), call. = FALSE)
+  }
 
   # population size N: if the categorical margins disagree, reconcile them to
   # the LARGEST (the intercept is that N; each margin is rescaled below).

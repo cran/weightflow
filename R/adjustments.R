@@ -96,8 +96,8 @@ apply_step <- function(step, data, w) UseMethod("apply_step")
 apply_step.step_unknown_eligibility <- function(step, data, w) {
   n       <- length(w)
   unknown <- .eval_cond(step$unknown, data, step$env, active = .wf_active(w))
-  cells   <- .make_cells(data, step$by, n)
   active  <- .wf_active(w)                # only still-active cases (negatives count)
+  cells   <- .make_cells(data, step$by, n, active = active)
   new_w   <- w
   diag    <- list()
 
@@ -221,7 +221,7 @@ apply_step.step_select_within <- function(step, data, w) {
   factor_h <- rep(NA_real_, length(hhn)); names(factor_h) <- hhn
 
   if (step$method == "weighting_class") {
-    cells_all <- .make_cells(data, step$by, n)
+    cells_all <- .make_cells(data, step$by, n, active = eligible)
     cell_el   <- as.character(cells_all[idx_el])
     nuniq     <- tapply(cell_el, cl, function(z) length(unique(z)))
     if (any(nuniq > 1L))
@@ -289,6 +289,10 @@ apply_step.step_select_within <- function(step, data, w) {
       diag <- do.call(rbind, diag)
       if (isTRUE(attr(classh, "collapsed"))) attr(diag, "classes_collapsed") <- TRUE
     }
+    # Smallest propensity among responding households (drives 1/p) -- feeds the
+    # tiny-propensity alert. The person-level path set this attribute but the
+    # household path did not, so extreme household NR adjustments went unflagged.
+    attr(diag, "p_min") <- if (any(resp_h)) min(p[resp_h], na.rm = TRUE) else NA_real_
     # Retain the full propensity vector, broadcast from households to their
     # members, so it can be recovered from the prepped object exactly like the
     # unit-level path (ECLAC request: inspect the NR-model propensities per unit,
@@ -301,7 +305,13 @@ apply_step.step_select_within <- function(step, data, w) {
       covars = data[idx_el, intersect(all.vars(step$formula), names(data)), drop = FALSE],
       engine = step$engine, formula = step$formula,
       crossfit = step$crossfit, weight_model = step$weight_model,
-      num_classes = step$num_classes)
+      num_classes = step$num_classes,
+      # calibration slope of the household propensities (mirrors the person path,
+      # which stored it; without it the report's slope diagnostic was blank for a
+      # household-level NR model)
+      cal_slope = tryCatch(unname(stats::coef(suppressWarnings(stats::glm(
+        as.integer(resp_h) ~ stats::qlogis(pmin(pmax(p, 1e-6), 1 - 1e-6)),
+        family = stats::binomial(), weights = Wh)))[2]), error = function(e) NA_real_))
     # Native per-unit detail (broadcast household -> members) for
     # collect_step_detail(); .weight_in/.factor come centrally from `history`.
     ud_det <- data.frame(.propensity = as.numeric(p)[mh],
@@ -366,6 +376,11 @@ apply_step.step_drop_ineligible <- function(step, data, w) {
     totvec <- if (is.list(step$totals) && !is.data.frame(step$totals))
                 .prep_linear_totals(step$formula, step$totals, step$count, data, eligible)
               else step$totals
+    if (!is.null(names(totvec)) && anyDuplicated(names(totvec)))
+      stop("`totals` has duplicated names (",
+           paste(unique(names(totvec)[duplicated(names(totvec))]), collapse = ", "),
+           "); each calibration target must appear once, otherwise one is silently ",
+           "dropped. (Matches the check in step_calibrate().)", call. = FALSE)
     if (!setequal(names(totvec), cn))
       stop("`totals` names must match the model.matrix columns: ",
            paste(cn, collapse = ", "))
@@ -392,6 +407,7 @@ apply_step.step_drop_ineligible <- function(step, data, w) {
     clr <- as.character(data[[step$cluster]])[eligible][resp_e]
     if (anyNA(clr))
       stop(sprintf("Cluster column '%s' has missing values (NA).", step$cluster))
+    .wf_assert_uniform_within_cluster(dr, clr, step$cluster)
     hh   <- unique(clr)
     n_h  <- as.numeric(tapply(dr, clr, length)[hh])          # responding members
     Wsum <- as.numeric(tapply(dr, clr, sum)[hh])             # base weight in household
@@ -409,13 +425,18 @@ apply_step.step_drop_ineligible <- function(step, data, w) {
   achieved  <- colSums(new_w[elig_idx[resp_e]] * Xr)
   truncated <- !is.null(step$bounds) || step$calfun == "logit"
   conv_ok   <- sol$converged
-  if (is.null(step$penalty) && !truncated) {
+  if (is.null(step$penalty)) {
+    # Verify the totals were reached, even with bounds/logit (a bounded calibration
+    # still meets the totals when feasible; if the bounds bite, they are NOT met and
+    # the user must be told -- previously this check was skipped under `truncated`).
     rel_dev <- abs(achieved - Tvec) / (abs(Tvec) + 1)
     if (any(rel_dev > 1e-6)) {
       conv_ok <- FALSE
       warning(sprintf(paste0("Nonresponse calibration did not fully satisfy the ",
-                             "constraints (max relative deviation = %.2e)."),
-                      max(rel_dev)), call. = FALSE)
+                             "constraints (max relative deviation = %.2e)%s."),
+                      max(rel_dev),
+                      if (truncated) " -- the bounds/calfun truncated the weights" else ""),
+              call. = FALSE)
     }
   }
   diag <- data.frame(variable = cn, target = Tvec, achieved = round(achieved, 2),
@@ -454,7 +475,7 @@ apply_step.step_nonresponse <- function(step, data, w) {
   new_w      <- w
 
   if (step$method == "weighting_class") {
-    cells <- .make_cells(data, step$by, n)
+    cells <- .make_cells(data, step$by, n, active = eligible)
     diag  <- list()
     for (g in levels(cells)) {
       idx      <- which(cells == g & eligible)

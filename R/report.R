@@ -60,6 +60,9 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
   if (!inherits(object, "prepped_weighting_spec"))
     stop("Call prep() first; report_weighting() needs a prepped recipe.")
   lang <- match.arg(lang)
+  # Accept a named vector for `metadata` too: coerce to a list up front so the
+  # downstream `metadata$survey` access and the metadata card both work.
+  if (!is.null(metadata) && !is.list(metadata)) metadata <- as.list(metadata)
   if (is.null(file)) file <- tempfile("weightflow_report_", fileext = ".html")
 
   h    <- object$history
@@ -71,9 +74,10 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
   cards <- paste0(
     .metric(.t("Cases", "Casos", lang), format(length(fin), big.mark = ",")),
     .metric(.t("Active (final)", "Activas (final)", lang), format(de_f$n, big.mark = ",")),
-    .metric(.t("Sum of weights", "Suma de pesos", lang), format(round(sum(fin)), big.mark = ",")),
-    .metric(.t("Final deff_K", "deff_K final", lang), sprintf("%.3f", de_f$deff)),
-    .metric(.t("Effective n", "n efectivo", lang), format(round(de_f$n_eff), big.mark = ",")))
+    .metric(.t("Sum of weights", "Suma de pesos", lang), format(round(sum(fin)), big.mark = ",", scientific = FALSE)),
+    .metric(.t("Final deff_K", "deff_K final", lang),
+            if (is.finite(de_f$deff)) sprintf("%.3f", de_f$deff) else "&mdash;"),
+    .metric(.t("Effective n", "n efectivo", lang), format(round(de_f$n_eff), big.mark = ",", scientific = FALSE)))
 
   # Stage summary table
   stab <- data.frame(
@@ -95,12 +99,12 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
              .t("deff_K", "deff_K", lang),
              .t("Effective n (n_eff)", "n efectivo (n_eff)", lang))
     hd  <- paste0("<th scope='col'>", hdr, "</th>", collapse = "")
-    num <- function(x) format(x, big.mark = ",")
+    num <- function(x) format(x, big.mark = ",", scientific = FALSE)
     d3  <- function(x) formatC(x, format = "f", digits = 3)
     dcell <- function(v) {
       if (!is.finite(v)) return("<span class='muted'>&mdash;</span>")   # N-20: deff overflow / NaN
-      sprintf("<span class='%s'>%s%s</span>",
-              if (v > 1.3) "cell-warn" else "cell-ok", if (v > 1.3) "&#9888; " else "", d3(v))
+      sprintf("<span class='%s'>%s%s</span>",                            # amber at deff >= 1.4
+              if (v >= 1.4) "cell-warn" else "cell-ok", if (v >= 1.4) "&#9888; " else "", d3(v))
     }
     rows <- vapply(seq_len(nrow(stab)), function(i) sprintf(
       "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>",
@@ -120,7 +124,8 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
       tot <- sum(abs(dd), na.rm = TRUE)
       share <- if (tot > 0) 100 * abs(dd) / tot else rep(0, length(dd))
       share[!is.finite(share)] <- 0
-      lab  <- vapply(object$steps, function(s) .step_short(s, lang), "")
+      lab  <- vapply(seq_along(object$steps),
+                     function(j) sprintf("%d &middot; %s", j, .step_short(object$steps[[j]], lang)), "")
       imax <- if (any(dd > 0, na.rm = TRUE)) which.max(dd) else 0L
       eff  <- function(j) {
         x <- dd[j]
@@ -169,7 +174,7 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
   stab_html <- paste0(stab_html, imp_html,
     sprintf("<p class='muted'>%s</p>",
             .t("Kish design effect by stage (0 = base, 1..k as in the table above); &#9650; largest increase, &#9660; recovered efficiency", "Efecto de dise\u00f1o de Kish por etapa (base y 1..k seg\u00fan la tabla de arriba); &#9650; mayor aumento, &#9660; eficiencia recuperada", lang)),
-    .svg_evolution(stab$stage, stab$deff),
+    .svg_evolution(stab$stage, stab$deff, lang = lang),
     sprintf("<p class='note'>%s</p>",
             .t("Read these changes in context: a rise at a calibration step need not mean lost precision (calibration to informative auxiliaries can raise the design effect while lowering variance), whereas a rise at a nonresponse step trades variance for reduced bias. See the note at the foot of the report.",
                "Le\u00e9 estos cambios en contexto: un aumento en un paso de calibraci\u00f3n no implica necesariamente p\u00e9rdida de precisi\u00f3n (la calibraci\u00f3n a auxiliares informativos puede aumentar el efecto de dise\u00f1o y a la vez reducir la varianza), mientras que un aumento en un paso de no respuesta cambia varianza por menor sesgo. Ver la nota al pie del reporte.", lang)))
@@ -211,8 +216,12 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
       if (identical(cv, FALSE))
         sprintf(.t("<p class='muted'>stopped after %d iterations (did not converge)</p>",
                    "<p class='muted'>detenido tras %d iteraciones (no convergi\u00f3)</p>", lang), it)
-      else sprintf(.t("<p class='muted'>converged in %d iterations</p>",
-                      "<p class='muted'>convergi\u00f3 en %d iteraciones</p>", lang), it)
+      else if (identical(cv, TRUE))
+        sprintf(.t("<p class='muted'>converged in %d iterations</p>",
+                   "<p class='muted'>convergi\u00f3 en %d iteraciones</p>", lang), it)
+      else                          # convergence not tracked: state the count only, no claim
+        sprintf(.t("<p class='muted'>%d iterations</p>",
+                   "<p class='muted'>%d iteraciones</p>", lang), it)
     } else ""
     extra <- paste0(
       iter_html,
@@ -255,6 +264,8 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
   wdist <- .weight_distribution_html(fin, lang, plots)
   exec  <- if (isTRUE(narrative)) .exec_summary(object, ri, de_f, lang, metadata$survey) else ""
   exec  <- paste0(exec, .status_checklist(object, de_f, object$final_weight, replicates, lang))
+  ddc_html <- if (isTRUE(object$nonprob)) .data_defect_card(object, lang) else ""
+  nrs_html <- .nr_sensitivity_card(object, lang)
   exec  <- paste0(exec, .attention_panel(object, lang))
   imsg  <- if (!is.finite(de_f$deff))
              .t("the design effect could not be computed \u2014 check the weights.",
@@ -270,7 +281,9 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
             de_f$deff, format(round(de_f$n_eff), big.mark = ","), imsg),
     sprintf("Interpretaci\u00f3n: el efecto de dise\u00f1o de Kish es %.3f (muestra efectiva %s); %s",
             de_f$deff, format(round(de_f$n_eff), big.mark = ","), imsg), lang)))
-  repl_html <- .replication_card(replicates, lang)
+  repl_html <- .replication_card(replicates, lang, object)
+  tpd_html  <- .two_phase_design_card(object, lang)
+  tpv_html  <- .two_phase_variance_card(object, replicates, y_vars, lang)
   domain_html <- .domain_reliability(object, domains, lang)
   step_anchors <- paste(vapply(seq_along(object$steps), function(i)
     sprintf("<a href='#step-%d'>%d</a>", i, i), character(1)), collapse = " ")
@@ -281,7 +294,10 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
     .t("Weight distribution", "Distribuci\u00f3n de pesos", lang),
     .t("Steps", "Pasos", lang), step_anchors)
   meta_html <- .metadata_card(metadata, lang)
-  racct <- .response_account(object, lang)
+  racct <- if (!is.null(.find_subsample_step(object$steps)))
+    paste0(.response_account(object, lang, "phase1"), "\n",
+           .response_account(object, lang, "phase2"))
+  else .response_account(object, lang)
   repro_html <- .reproducibility_card(object, replicates, lang)
 
   done_txt <- local({
@@ -303,13 +319,20 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
             sprintf("Receta completada con %d punto%s de atenci\u00f3n.", nis, if (nis == 1L) "" else "s"), lang)
     it <- c(sprintf("%d %s", ns, if (ns == 1L) .t("weighting step", "paso de ponderaci\u00f3n", lang)
                                  else .t("weighting steps", "pasos de ponderaci\u00f3n", lang)))
-    if (ncv == 0L)
+    # Claim "calibration constraints preserved" when the recipe has a
+    # constraint-imposing step. Post-stratification meets its targets exactly by
+    # construction and emits no `converged` attribute, so it was being excluded;
+    # include it (and the other calibration steps) by class as well.
+    has_constraints <- any(vapply(object$steps, function(st)
+      inherits(st, c("step_calibrate", "step_model_calibration", "step_trim_calibrated")) ||
+      !is.null(attr(st$diagnostics, "converged")), logical(1)))
+    if (has_constraints && ncv == 0L)
       it <- c(it, if (is.null(md) || !is.finite(md) || md < 0.05)
                     .t("calibration constraints preserved",
                        "restricciones de calibraci\u00f3n preservadas", lang)
                   else .t(sprintf("calibration totals within %.2f%% of target after rounding/trimming", md),
                           sprintf("totales de calibraci\u00f3n dentro de %.2f%% del objetivo tras redondeo/recorte", md), lang))
-    if (!is.null(replicates)) {
+    if (!is.null(replicates) && inherits(replicates, c("weightflow_boot", "weightflow_jack"))) {
       rmat  <- replicates$replicates
       nrp   <- if (!is.null(rmat)) ncol(rmat) else replicates$R
       nfl   <- if (!is.null(rmat)) sum(apply(rmat, 2, anyNA)) else 0L
@@ -333,12 +356,23 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
   # sections cannot be misaligned when one is added or removed.
   html <- paste0(
     sprintf("<!DOCTYPE html><html lang='%s'><head><meta charset='utf-8'>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n", lang),
-    sprintf("<title>%s</title>", .t("weightflow report", "reporte weightflow", lang)), .report_css(), "</head><body>\n",
-    sprintf("<h1>weightflow &mdash; %s</h1>\n", .t("weighting recipe", "receta de ponderaci\u00f3n", lang)),
+    sprintf("<title>%s</title>", .t("weightflow &mdash; survey weighting report", "weightflow &mdash; reporte de ponderaci&oacute;n", lang)), .report_css(), "</head><body>\n",
+    sprintf("<h1>weightflow &mdash; %s</h1>\n", .t("survey weighting report", "reporte de ponderaci&oacute;n", lang)),
     sprintf("<p class='muted'>%s: <code>%s</code> &nbsp;|&nbsp; %d %s</p>\n",
-            .t("Base weights", "Pesos base", lang), .html_escape(object$base_weights),
-            length(object$steps), .t("steps", "pasos", lang)),
+            .t("Base weights", "Pesos base", lang),
+            if (isTRUE(object$nonprob)) .t("1 (non-probability sample)",
+                                           "1 (muestra no probabil&iacute;stica)", lang)
+            else .html_escape(object$base_weights),
+            length(object$steps),
+            if (length(object$steps) == 1L) .t("step", "paso", lang)
+            else .t("steps", "pasos", lang)),
     "<p class='prov'>", prov, "</p>\n",
+    if (isTRUE(object$nonprob))
+      sprintf("<div class='alert'><strong>%s</strong> %s</div>\n",
+        .t("Non-probability sample.", "Muestra no probabil&iacute;stica.", lang),
+        .t("This sample has no design weights; inference relies on adjustment against a probability reference (pseudo-weights and/or model calibration) and on the assumption that participation is ignorable given the covariates used. Estimates and their variances are model-dependent and should be read with that caveat.",
+           "Esta muestra no tiene pesos de dise&ntilde;o; la inferencia se apoya en el ajuste contra una referencia probabil&iacute;stica (pseudo-pesos y/o calibraci&oacute;n por modelo) y en el supuesto de que la participaci&oacute;n es ignorable dadas las covariables usadas. Las estimaciones y sus varianzas dependen del modelo y deben leerse con esa advertencia.", lang))
+    else "",
     "<div class='toolbar noprint'><button type='button' id='wf-pdf' class='wfbtn'>",
       .t("Download PDF", "Descargar PDF", lang), "</button></div>\n",
     "<nav aria-label=\"Contents\">", toc_html, "</nav>\n",
@@ -347,11 +381,15 @@ report_weighting <- function(object, file = NULL, open = TRUE, plots = TRUE,
     "<div class='cards'>", cards, "</div>\n",
     racct, "\n",
     exec, "\n",
+    ddc_html, "\n",
+    nrs_html, "\n",
     repro_html, "\n",
     sprintf("<h2 id='pipeline'>%s</h2>", .t("Pipeline", "Flujo de pasos", lang)), diagram, "\n",
     sprintf("<p class='muted'>%s</p>", .t("Variables used:", "Variables usadas:", lang)), vars_chips, "\n",
     sprintf("<h2 id='stages'>%s</h2>", .t("Per-stage summary", "Resumen por etapa", lang)), stab_html, "\n",
+    tpd_html, "\n",
     repl_html, "\n",
+    tpv_html, "\n",
     domain_html, "\n",
     sprintf("<h2 id='weights'>%s</h2>", .t("Weight distribution (final)", "Distribuci\u00f3n de pesos (final)", lang)), wdist, "\n",
     sprintf("<h2 id='steps'>%s</h2>\n", .t("Steps", "Pasos", lang)),

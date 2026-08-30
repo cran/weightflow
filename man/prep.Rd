@@ -23,7 +23,12 @@ on the object (\verb{$alerts}) and shown in the HTML report, but not raised as
 warnings, so they do not flood bootstrap/jackknife replicate fits.}
 }
 \value{
-a "prepped_weighting_spec" object.
+a "prepped_weighting_spec" object. Every quality incident is recorded
+in \verb{$alerts} (readable with \code{\link[=weighting_alerts]{weighting_alerts()}} / \code{\link[=has_alerts]{has_alerts()}}),
+regardless of \code{warn}. This includes warnings a step raises internally, such
+as a calibration that could not meet its constraints: they are captured into
+\verb{$alerts} even when the surrounding warnings are suppressed, so \verb{$alerts} is
+the single reliable channel for programmatic quality control.
 }
 \description{
 Runs an inert \code{\link[=weighting_spec]{weighting_spec()}} recipe. Starting from the design base
@@ -36,4 +41,9 @@ This is the only function that computes weights.
 rec <- weighting_spec(sample_survey, base_weights = pw) |>
   step_nonresponse(respondent = responded, method = "weighting_class", by = "region")
 prep(rec)
+}
+\seealso{
+\link{weightflow-alerts} for the catalogue of quality alerts prep() can
+raise, \code{\link[=weighting_alerts]{weighting_alerts()}} / \code{\link[=has_alerts]{has_alerts()}} to read them, and
+\code{vignette("inspecting-auditing")} for the full quality-control workflow.
 }

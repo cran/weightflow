@@ -26,6 +26,13 @@
 #' @param strata,psu column names of the stratum and the PSU. If `psu` is NULL
 #'   each unit is its own PSU; if `strata` is NULL a single stratum is assumed.
 #' @param m PSUs drawn per stratum (default `n - 1`).
+#' @param fpc optional first-stage finite-population correction: the name of a
+#'   column holding the first-stage sampling fraction f_h (constant within
+#'   stratum, in `[0, 1]`), a single number applied to every stratum, or a numeric
+#'   vector named by stratum level. `NULL` (default) is the with-replacement
+#'   bootstrap (no correction). The correction folds `(1 - f_h)` into the Rao-Wu
+#'   rescaling (Rao, Wu and Yue 1992; Beaumont and Patak 2012); `f_h = 0`
+#'   reproduces the uncorrected result. Only available for the bootstrap.
 #' @param lonely_psu how to treat strata with a single PSU (which a
 #'   with-replacement bootstrap cannot resample): "certainty" (default) treats
 #'   them as self-representing, so they contribute no bootstrap variance, and
@@ -40,6 +47,10 @@
 #'   are identical to the serial run: the resampling is drawn up front with the
 #'   seed and only the deterministic re-prep is parallelised.
 #' @param progress print progress every 25 replicates (serial only).
+#' @param .tp_component internal. For a two-phase recipe, `"full"` (default) draws
+#'   the coupled factor; `"phase1"` / `"phase2"` draw only the phase-1 or phase-2
+#'   component of the coupling. Used by `two_phase_variance()` to split
+#'   \eqn{V = V_1 + V_2}; not for direct use.
 #' @return An object of class `weightflow_boot` with the `replicates` matrix
 #'   (units x replicates), the point `weights`, and the design metadata.
 #' @examples
@@ -49,13 +60,29 @@
 #' boot <- bootstrap_weights(spec, replicates = 50, strata = "region",
 #'                           psu = "psu", seed = 1)
 #' boot_total(boot, "responded")
+#' # with a first-stage finite-population correction (per-stratum sampling fraction)
+#' d <- sample_survey; d$f <- 0.1
+#' spec_f <- weighting_spec(d, base_weights = pw)
+#' bootstrap_weights(spec_f, replicates = 50, strata = "region", psu = "psu",
+#'                   fpc = "f", seed = 1)
 #' @export
+#' @family variance estimation
 bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
-                              psu = NULL, m = NULL,
+                              psu = NULL, m = NULL, fpc = NULL,
                               lonely_psu = c("certainty", "collapse"),
-                              seed = NULL, cores = 1L, progress = TRUE) {
+                              seed = NULL, cores = 1L, progress = TRUE,
+                              .tp_component = c("full", "phase1", "phase2")) {
+  .tp_component <- match.arg(.tp_component)
   if (!inherits(object, "weighting_spec"))
     stop("`object` must be a weighting_spec or a prepped weighting_spec.")
+  # NP-07: a finite-population correction is a probability-sampling concept (it needs
+  # a sampling fraction from a known design). A non-probability sample has no such
+  # design, so an fpc here is meaningless; warn and ignore it.
+  if (!is.null(fpc) && isTRUE(object$nonprob)) {
+    warning("`fpc` does not apply to a non-probability sample (there is no sampling ",
+            "fraction from a known design); it is ignored.", call. = FALSE)
+    fpc <- NULL
+  }
   lonely_psu <- match.arg(lonely_psu)
   replicates <- .wf_count(replicates, "replicates", min = 2L)
   if (!is.null(m)) m <- .wf_count(m, "m", min = 1L)
@@ -66,7 +93,13 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   t0 <- Sys.time()
   data <- object$data
   bw   <- object$base_weights
-  spec <- structure(list(data = data, base_weights = bw, steps = object$steps),
+  # NP-06: a prepped non-probability spec dropped its synthetic all-ones base
+  # column (.wf_base1); re-materialise it so replication does not read NULL base
+  # weights and collapse every replicate weight to 0.
+  if (isTRUE(object$nonprob) && grepl("^\\.wf_base1", bw) && !(bw %in% names(data)))
+    data[[bw]] <- 1
+  spec <- structure(list(data = data, base_weights = bw, steps = object$steps,
+                         nonprob = isTRUE(object$nonprob)),
                     class = "weighting_spec")
   point <- if (!is.null(object$final_weight)) object$final_weight else prep(spec)$final_weight
   n   <- nrow(data)
@@ -81,17 +114,103 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
     as.character(data[[psu]])
   }
   .assert_design_complete(data, strata, psu)
+  # Two-phase design: if the recipe subsamples a second phase (step_subsample), a
+  # single per-PSU factor of variance d = (1-f1)pi2 + (1-pi2) replaces the Rao-Wu
+  # factor below and captures both phases. f1 comes from `fpc` (0 by default).
+  # These guards run BEFORE `fpc` is resolved so their (didactic) messages are the
+  # ones the user sees, not the generic named-vector error.
+  nsub      <- sum(vapply(object$steps, function(s) inherits(s, "step_subsample"), logical(1)))
+  sub       <- .find_subsample_step(object$steps)
+  two_phase <- !is.null(sub)
+  if (two_phase) {
+    if (nsub > 1L)
+      stop("bootstrap_weights(): the recipe has ", nsub, " step_subsample() steps. ",
+           "Only a single second phase is supported.", call. = FALSE)
+    if (!identical(sub$design, "poisson"))
+      stop("bootstrap_weights(): step_subsample design = \"", sub$design,
+           "\" is not yet supported; only \"poisson\" is implemented.", call. = FALSE)
+    # A clustered/stratified first phase is not yet folded into the coupling: the
+    # phase-2 factor is generated at the phase-2 sampling unit, assumed to be the
+    # phase-1 unit. Accepting strata/psu would silently drop the first-phase
+    # intra-cluster variance, so refuse rather than undercover. For a clustered
+    # first phase, calibrate the subsample to the first-phase sample instead
+    # (compose with reference_sample()); its replicate weights carry that design.
+    if (!is.null(strata) || !is.null(psu))
+      stop("bootstrap_weights(): `strata` / `psu` (a clustered first-phase design) ",
+           "are not supported together with step_subsample(); this version generates ",
+           "the phase-2 factor at the phase-2 sampling unit. For a clustered first ",
+           "phase, calibrate the subsample to the first-phase sample via ",
+           "reference_sample() (its replicate weights carry the first-phase design), ",
+           "and leave `strata`/`psu` NULL here.", call. = FALSE)
+    if (is.numeric(fpc) && !is.null(names(fpc)))
+      stop("bootstrap_weights(): with step_subsample(), `fpc` is the first-phase ",
+           "sampling fraction f1; give it as a single number or a column, not a ",
+           "vector named by stratum (first-phase strata are not supported here).",
+           call. = FALSE)
+  }
+  # First-stage sampling fraction f_h for the finite-population correction, resolved
+  # to one value per row NOW (before any lonely-PSU collapse), keyed by stratum.
+  # f = 0 (the default) reproduces the with-replacement bootstrap exactly.
+  fvec <- rep(0, n)
+  if (!is.null(fpc)) {
+    fvec <- if (is.character(fpc) && length(fpc) == 1L) {
+      if (!fpc %in% names(data)) stop(sprintf("`fpc` column '%s' not found.", fpc), call. = FALSE)
+      as.numeric(data[[fpc]])
+    } else if (is.numeric(fpc) && length(fpc) == 1L) {
+      rep(as.numeric(fpc), n)
+    } else if (is.numeric(fpc) && !is.null(names(fpc))) {
+      out <- unname(fpc[st])
+      if (anyNA(out)) stop("`fpc` (named vector) is missing some stratum level(s).", call. = FALSE)
+      as.numeric(out)
+    } else stop("`fpc` must be a column name, a single number, or a numeric vector named by stratum.",
+                call. = FALSE)
+    if (any(!is.finite(fvec)) || any(fvec < 0 | fvec > 1))
+      stop("`fpc` (first-stage sampling fraction) must be in [0, 1].", call. = FALSE)
+  }
+  tp_setup  <- if (two_phase) .twophase_setup(sub, data, fvec) else NULL
+
   if (lonely_psu == "collapse") {
     cl <- paste(st, cl, sep = "||")     # nest PSU ids so distinct PSUs stay distinct after merging strata
     st <- .collapse_lonely(st, cl)
   }
   hs <- unique(st)
+  # f_h per final stratum; a collapsed pseudo-stratum must have a single fraction.
+  # Two-phase mode does not use fh_by / the Rao-Wu factor (it uses tp_setup, whose
+  # per-PSU f1 is validated in .twophase_setup), so a first-phase fraction f1 that
+  # legitimately varies across phase-2 units (e.g. an `fpc` column by region) must
+  # not be forced constant here -- skip the single-phase stratum check (TP-09).
+  fh_by <- stats::setNames(numeric(length(hs)), hs)
+  if (!two_phase) for (h in hs) {
+    fu <- unique(fvec[st == h])
+    if (length(fu) != 1L)
+      stop(sprintf(paste0("`fpc` is not constant within stratum '%s'. Collapsing strata with ",
+                          "different sampling fractions is not valid; give them the same fpc, or ",
+                          "do not collapse them."), h), call. = FALSE)
+    fh_by[[h]] <- fu
+  }
   if (!is.null(seed)) set.seed(seed)
 
   # --- Phase 1 (serial, uses the RNG): draw every resampling factor vector and a
   # per-replicate seed. This is the ONLY random part; capturing it up front makes
   # the parallel run bit-identical to the serial one and reproducible via `seed`.
-  singleton <- character(0)
+  # Strata with a single PSU cannot be resampled (recorded once, warned below).
+  singleton <- hs[vapply(hs, function(h) length(unique(cl[st == h])) < 2L, logical(1))]
+  # One draw of the (stratified, clustered) single-phase Rao-Wu factor vector.
+  raowu_fac <- function() {
+    fac <- numeric(n)
+    for (h in hs) {
+      idx  <- which(st == h); psus <- unique(cl[idx]); nh <- length(psus)
+      if (nh < 2L) { fac[idx] <- 1; next }
+      mh   <- if (is.null(m)) nh - 1L else min(as.integer(m), nh - 1L)
+      cnt  <- tabulate(sample.int(nh, mh, replace = TRUE), nbins = nh)
+      # Rao-Wu rescaling with the (1 - f_h) fpc folded into the scale term (Rao, Wu
+      # and Yue 1992; Beaumont and Patak 2012). f_h = 0 -> with-replacement. E[lam]=1.
+      ah   <- sqrt(mh * (1 - fh_by[[h]]) / (nh - 1))
+      lam  <- 1 - ah + ah * (nh / mh) * cnt; names(lam) <- psus
+      fac[idx] <- lam[cl[idx]]
+    }
+    fac
+  }
   facs   <- vector("list", replicates)
   rseeds <- sample.int(.Machine$integer.max, replicates)
   # Restore the RNG on exit so one_rep()'s per-replicate set.seed() does not leak.
@@ -102,20 +221,15 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
     get(".Random.seed", envir = .GlobalEnv) else .rng_entry
   if (!is.null(.rng_restore))
     on.exit(assign(".Random.seed", .rng_restore, envir = .GlobalEnv), add = TRUE)
+  tp_dvar <- if (two_phase) switch(.tp_component,
+    full = tp_setup$d, phase1 = tp_setup$d1, phase2 = tp_setup$d2) else NULL
   for (b in seq_len(replicates)) {
-    fac <- numeric(n)
-    for (h in hs) {
-      idx  <- which(st == h)
-      psus <- unique(cl[idx])
-      nh   <- length(psus)
-      if (nh < 2L) { fac[idx] <- 1; if (b == 1L) singleton <- c(singleton, h); next }
-      mh   <- if (is.null(m)) nh - 1L else min(as.integer(m), nh - 1L)
-      cnt  <- tabulate(sample.int(nh, mh, replace = TRUE), nbins = nh)
-      lam  <- 1 - sqrt(mh / (nh - 1)) + sqrt(mh / (nh - 1)) * (nh / mh) * cnt
-      names(lam) <- psus
-      fac[idx] <- lam[cl[idx]]
-    }
-    facs[[b]] <- fac
+    # Two-phase coupling replaces the single-phase Rao-Wu factor entirely: a single
+    # per-PSU factor of variance d = (1-f1)pi2 + (1-pi2) (see vignette two-phase-sampling).
+    # `.tp_component` draws only the phase-1 (d1) or phase-2 (d2) part for the
+    # V = V1 + V2 decomposition (two_phase_variance()).
+    if (two_phase) { facs[[b]] <- .twophase_fac(tp_setup, dvar = tp_dvar); next }
+    facs[[b]] <- raowu_fac()
   }
 
   # --- Phase 2 (serial or parallel): re-prep each replicate. Pure deterministic
@@ -124,6 +238,7 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
     set.seed(rseeds[b])                       # only matters if a step is stochastic
     sp <- spec; sp$data[[bw]] <- bw0 * facs[[b]]
     attr(sp$data, "wf_replicate") <- TRUE          # step_assert becomes a no-op in replicates
+    attr(sp$data, "wf_replicate_idx") <- b         # pairs with a reference_sample() replicate column
     tryCatch(prep(sp)$final_weight, error = function(e) rep(NA_real_, n))
   }
   fw_list <- .par_lapply(seq_len(replicates), one_rep, cores = cores,
@@ -144,9 +259,35 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   if (failed > 0L)
     warning(failed, " replicate(s) failed to converge and were set to NA.")
 
+  # Degrees of freedom = (total PSUs) - (strata), the standard survey convention,
+  # computed post-collapse. Used by the t / percentile confidence intervals.
+  nh_by <- vapply(hs, function(h) length(unique(cl[st == h])), integer(1))
+  df <- sum(nh_by) - length(hs)
+  # Resolved design (post-collapse), so the effective design is auditable and
+  # reconstructible from the object, not just the arguments the user passed:
+  # f_h per final stratum, the PSU count n_h, the effective resample size m_h, and
+  # whether any lonely strata were collapsed.
+  mh_by <- if (is.null(m)) pmax(nh_by - 1L, 0L) else pmin(as.integer(m), nh_by - 1L)
+  design <- list(fh = fh_by, nh = nh_by, mh = stats::setNames(mh_by, hs),
+                 collapsed = lonely_psu == "collapse" && any(grepl("__collapsed__", hs)))
+  if (two_phase) {
+    # Degrees of freedom and design summary come from the phase-2 sampling units,
+    # not the (single-phase) strata/PSU columns, which do not describe this design.
+    # Count only phase-2 PSUs that survive as ACTIVE units (finite, non-zero weight
+    # -- .wf_active, so a valid negative GREG weight still counts, matching the rest
+    # of the package): a household dropped BEFORE the subsample (ineligible,
+    # whole-household nonresponse) carries weight 0, so counting it would overstate
+    # the degrees of freedom (e.g. 17 vs the ~10 effective PSUs).
+    active_psu <- unique(as.character(data[[sub$psu]])[.wf_active(point)])
+    npsu2  <- length(active_psu)
+    df     <- max(npsu2 - 1L, 1L)
+    design <- list(two_phase = TRUE, phase2_design = sub$design,
+                   phase2_psu = sub$psu, n_psu2 = npsu2)
+  }
   structure(list(replicates = reps, weights = point, data = data,
                  strata = strata, psu = psu, R = replicates,
                  base_weights = bw, method = "bootstrap", lonely_psu = lonely_psu,
+                 fpc = fpc, df = df, design = design, two_phase = two_phase,
                  seed = seed, cores = as.integer(cores),
                  elapsed = as.numeric(difftime(Sys.time(), t0, units = "secs"))),
             class = "weightflow_boot")
@@ -201,6 +342,18 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
                         "Resampling is undefined for a unit with no PSU; assign a PSU to those ",
                         "units (or filter them) before bootstrap/jackknife."),
                  psu, sum(is.na(data[[psu]]))), call. = FALSE)
+  # A blank id ("" or all-whitespace, typical of a CSV with empty cells) never
+  # matches the by-name subscript, so every replicate fails with a misleading
+  # "did not converge". Reject it here, next to the NA guard.
+  blank <- function(col) { x <- as.character(col); sum(!is.na(x) & !nzchar(trimws(x))) }
+  if (!is.null(strata) && blank(data[[strata]]) > 0L)
+    stop(sprintf(paste0("Strata column '%s' has blank (empty-string) values in %d unit(s). ",
+                        "Recode them to a real stratum label before bootstrap/jackknife."),
+                 strata, blank(data[[strata]])), call. = FALSE)
+  if (!is.null(psu) && blank(data[[psu]]) > 0L)
+    stop(sprintf(paste0("PSU column '%s' has blank (empty-string) values in %d unit(s). ",
+                        "Recode them to a real PSU id before bootstrap/jackknife."),
+                 psu, blank(data[[psu]])), call. = FALSE)
 }
 
 #' Print a bootstrap replicate-weight object
@@ -217,9 +370,11 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
 print.weightflow_boot <- function(x, ...) {
   cat("<weightflow bootstrap>\n")
   cat(sprintf("  replicates : %d\n", x$R))
-  cat(sprintf("  units      : %d (active: %d)\n", nrow(x$replicates), sum(x$weights > 0)))
+  cat(sprintf("  units      : %d (active: %d)\n", nrow(x$replicates), sum(.wf_active(x$weights))))
   cat(sprintf("  strata     : %s\n", if (is.null(x$strata)) "(none)" else x$strata))
   cat(sprintf("  psu        : %s\n", if (is.null(x$psu)) "(unit-level)" else x$psu))
+  if (!is.null(x$df)) cat(sprintf("  df         : %d%s\n", x$df,
+      if (!is.null(x$fpc) && !(is.numeric(x$fpc) && all(x$fpc == 0))) "  (fpc applied)" else ""))
   invisible(x)
 }
 
@@ -239,28 +394,73 @@ print.weightflow_boot <- function(x, ...) {
 #' @param boot a `weightflow_boot` object.
 #' @param statistic a function `function(w, data)` returning a numeric scalar
 #'   (or vector) given a weight vector and the data.
-#' @param level confidence level for the (normal) interval.
+#' @param level confidence level for the interval.
+#' @param ci_type interval type: "normal" (default, z-based), "t" (Student t with
+#'   the design degrees of freedom, wider and less anticonservative with few PSUs),
+#'   or "percentile" (empirical quantiles of the valid replicates).
+#' @param df degrees of freedom for the t interval; `NULL` (default) uses the
+#'   design df stored on the object (total PSUs minus strata).
 #' @return A data frame with `estimate`, `se`, `ci_lower`, `ci_upper`.
+#' @examples
+#' spec <- weighting_spec(sample_survey, base_weights = pw) |>
+#'   step_calibrate(method = "raking",
+#'                  margins = list(region = c(table(population$region))))
+#' boot <- bootstrap_weights(spec, replicates = 50, strata = "region",
+#'                           psu = "psu", seed = 1)
+#' # a t interval with the design degrees of freedom (safer with few PSUs)
+#' bootstrap_estimate(boot, function(w, d) sum(w * d$responded), ci_type = "t")
 #' @export
-bootstrap_estimate <- function(boot, statistic, level = 0.95) {
+#' @family variance estimation
+bootstrap_estimate <- function(boot, statistic, level = 0.95,
+                               ci_type = c("normal", "t", "percentile"), df = NULL) {
   if (!inherits(boot, "weightflow_boot")) stop("`boot` must be a weightflow_boot object.")
   .wf_level(level)
+  ci_type <- match.arg(ci_type)
+  df <- if (is.null(df)) boot$df else df
   theta_hat <- statistic(boot$weights, boot$data)
-  thetas    <- apply(boot$replicates, 2L, function(w) statistic(w, boot$data))
-  z <- stats::qnorm(1 - (1 - level) / 2)
-  if (is.matrix(thetas)) {
-    good <- apply(is.finite(thetas), 2L, all)
-    dev  <- thetas[, good, drop = FALSE] - theta_hat
-    se   <- sqrt(rowMeans(dev^2))
+  # A failed replicate is an all-NA weight column. Do NOT hand it to the user's
+  # statistic (it may not be NA-safe and would abort every estimate); return NAs of
+  # the right length instead, which the finite-value filter below drops. Enforcing a
+  # constant output length also avoids a ragged result from a vector statistic.
+  klen   <- length(theta_hat)
+  thetas <- vapply(seq_len(ncol(boot$replicates)), function(j) {
+    w <- boot$replicates[, j]
+    if (anyNA(w)) return(rep(NA_real_, klen))
+    v <- statistic(w, boot$data)
+    if (length(v) != klen)
+      stop(sprintf(paste0("The statistic returned length %d on a replicate but %d on the point ",
+                          "estimate; a statistic must return a constant length."),
+                   length(v), klen), call. = FALSE)
+    as.numeric(v)
+  }, numeric(klen))
+  if (is.matrix(thetas) && !is.null(names(theta_hat))) rownames(thetas) <- names(theta_hat)
+  a   <- (1 - level) / 2
+  mat <- is.matrix(thetas)
+  good   <- if (mat) apply(is.finite(thetas), 2L, all) else is.finite(thetas)
+  nvalid <- sum(good)
+  if (nvalid < length(good))
+    warning(length(good) - nvalid, " non-finite replicate(s) dropped.")
+  if (mat) { dev <- thetas[, good, drop = FALSE] - theta_hat; se <- sqrt(rowMeans(dev^2)) }
+  else       se <- sqrt(mean((thetas[good] - theta_hat)^2))
+  if (ci_type == "percentile") {
+    if (nvalid < 50L)
+      warning("A percentile interval with fewer than 50 valid replicates is unstable.", call. = FALSE)
+    qf <- function(v) stats::quantile(v, c(a, 1 - a), names = FALSE, na.rm = TRUE)
+    if (mat) { q <- apply(thetas[, good, drop = FALSE], 1L, qf); lo <- q[1, ]; hi <- q[2, ] }
+    else     { q <- qf(thetas[good]); lo <- q[1]; hi <- q[2] }
   } else {
-    good <- is.finite(thetas)
-    se   <- sqrt(mean((thetas[good] - theta_hat)^2))
+    crit <- if (ci_type == "t") {
+      if (is.null(df) || !is.finite(df) || df <= 0)
+        stop(sprintf(paste0("A t interval needs positive degrees of freedom, but the design has ",
+                            "df = %s (e.g. one PSU per stratum). Use ci_type = \"normal\", ",
+                            "collapse lonely strata, or pass `df`."),
+                     if (is.null(df)) "NULL" else as.character(df)), call. = FALSE)
+      stats::qt(1 - a, df)
+    } else stats::qnorm(1 - a)
+    lo <- theta_hat - crit * se; hi <- theta_hat + crit * se
   }
-  if (sum(good) < length(good))
-    warning(length(good) - sum(good), " non-finite replicate(s) dropped.")
-  data.frame(estimate = theta_hat, se = se,
-             ci_lower = theta_hat - z * se, ci_upper = theta_hat + z * se,
-             row.names = if (is.matrix(thetas)) rownames(thetas) else NULL)
+  data.frame(estimate = theta_hat, se = se, ci_lower = lo, ci_upper = hi,
+             row.names = if (mat) rownames(thetas) else NULL)
 }
 
 #' @rdname bootstrap_estimate
@@ -277,7 +477,7 @@ boot_total <- function(boot, variable) {
 boot_mean <- function(boot, variable) {
   variable <- .wf_var(variable, boot)
   bootstrap_estimate(boot, function(w, d) {
-    x <- d[[variable]]; ok <- !is.na(x) & w > 0
+    x <- d[[variable]]; ok <- !is.na(x) & .wf_active(w)   # keep active negatives, as totals do
     sum(w[ok] * x[ok]) / sum(w[ok])
   })
 }
@@ -324,16 +524,31 @@ boot_mean <- function(boot, variable) {
 #' jk <- jackknife_weights(spec, strata = "region", psu = "psu", progress = FALSE)
 #' jack_total(jk, "employed")
 #' @export
+#' @family variance estimation
 jackknife_weights <- function(object, strata = NULL, psu = NULL,
                               lonely_psu = c("certainty", "collapse"),
                               cores = 1L, progress = TRUE) {
   if (!inherits(object, "weighting_spec"))
     stop("`object` must be a weighting_spec or a prepped weighting_spec.")
+  # Two-phase designs are not supported by the jackknife: a delete-a-PSU jackknife
+  # captures only the first-phase variance and would undercover the two-phase
+  # variance silently. Use bootstrap_weights(), which has the two-phase coupling.
+  if (!is.null(.find_subsample_step(object$steps)))
+    stop("jackknife_weights() does not support a two-phase design (the recipe has ",
+         "a step_subsample()); it would capture only the first-phase variance and ",
+         "undercover. Use bootstrap_weights() for the two-phase variance.",
+         call. = FALSE)
   lonely_psu <- match.arg(lonely_psu)
   t0 <- Sys.time()
   data <- object$data
   bw   <- object$base_weights
-  spec <- structure(list(data = data, base_weights = bw, steps = object$steps),
+  # NP-06: a prepped non-probability spec dropped its synthetic all-ones base
+  # column (.wf_base1); re-materialise it so replication does not read NULL base
+  # weights and collapse every replicate weight to 0.
+  if (isTRUE(object$nonprob) && grepl("^\\.wf_base1", bw) && !(bw %in% names(data)))
+    data[[bw]] <- 1
+  spec <- structure(list(data = data, base_weights = bw, steps = object$steps,
+                         nonprob = isTRUE(object$nonprob)),
                     class = "weighting_spec")
   point <- if (!is.null(object$final_weight)) object$final_weight else prep(spec)$final_weight
   n   <- nrow(data)
@@ -392,10 +607,12 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
   if (failed > 0L)
     warning(failed, " replicate(s) failed and were set to NA.")
 
+  # Degrees of freedom = (total PSUs) - (strata): one delete-a-PSU replicate per PSU.
+  df <- length(rep_stratum) - length(unique(rep_stratum))
   structure(list(replicates = reps, weights = point, data = data,
                  strata = strata, psu = psu, R = R,
                  rep_stratum = rep_stratum, rep_nh = rep_nh, base_weights = bw,
-                 method = "jackknife", lonely_psu = lonely_psu,
+                 method = "jackknife", lonely_psu = lonely_psu, df = df,
                  cores = as.integer(cores),
                  elapsed = as.numeric(difftime(Sys.time(), t0, units = "secs"))),
             class = "weightflow_jack")
@@ -415,9 +632,10 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
 print.weightflow_jack <- function(x, ...) {
   cat("<weightflow jackknife>\n")
   cat(sprintf("  replicates : %d (delete-a-PSU)\n", x$R))
-  cat(sprintf("  units      : %d (active: %d)\n", nrow(x$replicates), sum(x$weights > 0)))
+  cat(sprintf("  units      : %d (active: %d)\n", nrow(x$replicates), sum(.wf_active(x$weights))))
   cat(sprintf("  strata     : %s\n", if (is.null(x$strata)) "(none)" else x$strata))
   cat(sprintf("  psu        : %s\n", if (is.null(x$psu)) "(unit-level)" else x$psu))
+  if (!is.null(x$df)) cat(sprintf("  df         : %d\n", x$df))
   invisible(x)
 }
 
@@ -438,7 +656,12 @@ print.weightflow_jack <- function(x, ...) {
 #' @param jack a `weightflow_jack` object.
 #' @param statistic a function `function(w, data)` returning a numeric scalar (or
 #'   vector) given a weight vector and the data.
-#' @param level confidence level for the (normal) interval.
+#' @param level confidence level for the interval.
+#' @param ci_type interval type: "normal" (default) or "t" (Student t with the
+#'   design degrees of freedom). The percentile interval is not defined for the
+#'   jackknife.
+#' @param df degrees of freedom for the t interval; `NULL` (default) uses the
+#'   design df stored on the object (total PSUs minus strata).
 #' @param variable name of the variable to estimate (for `jack_total`/`jack_mean`).
 #' @return A data frame with `estimate`, `se`, `ci_lower`, `ci_upper`.
 #' @note `jack_total()` / `jack_mean()` center the replicate deviations on the
@@ -454,12 +677,38 @@ print.weightflow_jack <- function(x, ...) {
 #' jk <- jackknife_weights(spec, strata = "region", psu = "psu", progress = FALSE)
 #' jackknife_estimate(jk, function(w, d) sum(w * d$employed, na.rm = TRUE))
 #' @export
-jackknife_estimate <- function(jack, statistic, level = 0.95) {
+#' @family variance estimation
+jackknife_estimate <- function(jack, statistic, level = 0.95,
+                               ci_type = c("normal", "t"), df = NULL) {
   if (!inherits(jack, "weightflow_jack")) stop("`jack` must be a weightflow_jack object.")
   .wf_level(level)
+  ci_type <- match.arg(ci_type)   # percentile is not a jackknife interval
+  df <- if (is.null(df)) jack$df else df
+  a  <- (1 - level) / 2
+  crit <- if (ci_type == "t") {
+    if (is.null(df) || !is.finite(df) || df <= 0)
+      stop(sprintf(paste0("A t interval needs positive degrees of freedom, but the design has ",
+                          "df = %s. Use ci_type = \"normal\", collapse lonely strata, or pass `df`."),
+                   if (is.null(df)) "NULL" else as.character(df)), call. = FALSE)
+    stats::qt(1 - a, df)
+  } else stats::qnorm(1 - a)
+  z <- crit
   theta_hat <- statistic(jack$weights, jack$data)
-  thetas    <- apply(jack$replicates, 2L, function(w) statistic(w, jack$data))
-  z <- stats::qnorm(1 - (1 - level) / 2)
+  # As in bootstrap_estimate(): a failed (all-NA) replicate is never passed to the
+  # statistic; it becomes NAs of the right length that the finite filter drops. The
+  # column order (and its alignment with `strat`) is preserved.
+  klen   <- length(theta_hat)
+  thetas <- vapply(seq_len(ncol(jack$replicates)), function(j) {
+    w <- jack$replicates[, j]
+    if (anyNA(w)) return(rep(NA_real_, klen))
+    v <- statistic(w, jack$data)
+    if (length(v) != klen)
+      stop(sprintf(paste0("The statistic returned length %d on a replicate but %d on the point ",
+                          "estimate; a statistic must return a constant length."),
+                   length(v), klen), call. = FALSE)
+    as.numeric(v)
+  }, numeric(klen))
+  if (is.matrix(thetas) && !is.null(names(theta_hat))) rownames(thetas) <- names(theta_hat)
   strat <- jack$rep_stratum
 
   jkn_var <- function(th, nh_vec) {                 # th: numeric over replicates
@@ -505,9 +754,75 @@ jack_total <- function(jack, variable) {
 jack_mean <- function(jack, variable) {
   variable <- .wf_var(variable, jack)
   jackknife_estimate(jack, function(w, d) {
-    x <- d[[variable]]; ok <- !is.na(x) & w > 0
+    x <- d[[variable]]; ok <- !is.na(x) & .wf_active(w)   # keep active negatives, as totals do
     sum(w[ok] * x[ok]) / sum(w[ok])
   })
+}
+
+#' Decompose a two-phase variance into V = V1 + V2
+#'
+#' For a recipe containing [step_subsample()], `two_phase_variance()` splits the
+#' recipe-aware bootstrap variance of an estimate into its first-phase and
+#' second-phase components, \eqn{V = V_1 + V_2}. The per-unit coupling factor has
+#' variance \eqn{d = (1-f_1)\pi_2 + (1-\pi_2)}, the sum of the phase-1 term
+#' \eqn{(1-f_1)\pi_2} and the phase-2 conditional term \eqn{1-\pi_2}; running the
+#' same bootstrap with each term in turn yields the two components.
+#'
+#' The share `prop_phase2` = V2 / V is an operational read: a large share means
+#' the second-phase subsampling drives the uncertainty, so subsampling more would
+#' pay off; a small share means a denser (more expensive) subsample would buy
+#' little, and the first phase is the binding constraint.
+#'
+#' @param object a `weighting_spec` (or prepped) whose recipe contains
+#'   [step_subsample()].
+#' @param variable name of the study variable (a single column).
+#' @param estimator `"mean"` (default) or `"total"`.
+#' @param replicates,seed,fpc passed through to [bootstrap_weights()].
+#' @return An object of class `weightflow_tp_variance`: `V1`, `V2`, `V`, the
+#'   matching standard errors `se1`, `se2`, `se`, and `prop_phase2` = V2 / V.
+#' @seealso [bootstrap_weights()], [step_subsample()].
+#' @examples
+#' \donttest{
+#' df <- transform(sample_survey,
+#'                 in2 = as.integer(runif(nrow(sample_survey)) < 0.3), p2 = 0.3)
+#' spec <- weighting_spec(df, base_weights = pw) |>
+#'   step_subsample(selected = in2, prob = p2, psu = "household_id")
+#' two_phase_variance(spec, "income", replicates = 100)
+#' }
+#' @export
+two_phase_variance <- function(object, variable, estimator = c("mean", "total"),
+                               replicates = 500L, seed = NULL, fpc = NULL) {
+  estimator <- match.arg(estimator)
+  if (!inherits(object, "weighting_spec"))
+    stop("`object` must be a weighting_spec or a prepped weighting_spec.", call. = FALSE)
+  if (is.null(.find_subsample_step(object$steps)))
+    stop("two_phase_variance() needs a recipe with a step_subsample() (a two-phase ",
+         "design); there is nothing to decompose.", call. = FALSE)
+  if (!is.character(variable) || length(variable) != 1L)
+    stop("`variable` must be a single column name.", call. = FALSE)
+  est <- if (estimator == "mean") boot_mean else boot_total
+  b1  <- bootstrap_weights(object, replicates = replicates, seed = seed, fpc = fpc,
+                           progress = FALSE, .tp_component = "phase1")
+  b2  <- bootstrap_weights(object, replicates = replicates, seed = seed, fpc = fpc,
+                           progress = FALSE, .tp_component = "phase2")
+  se1 <- est(b1, variable)$se
+  se2 <- est(b2, variable)$se
+  V1  <- se1^2; V2 <- se2^2; V <- V1 + V2
+  structure(list(variable = variable, estimator = estimator,
+                 V1 = V1, V2 = V2, V = V, se1 = se1, se2 = se2, se = sqrt(V),
+                 prop_phase2 = if (V > 0) V2 / V else NA_real_),
+            class = "weightflow_tp_variance")
+}
+
+#' @export
+print.weightflow_tp_variance <- function(x, ...) {
+  cat(sprintf("Two-phase variance of the %s of '%s'  (V = V1 + V2)\n",
+              x$estimator, x$variable))
+  cat(sprintf("  V1  phase-1  = %.6g   (SE %.5g)\n", x$V1, x$se1))
+  cat(sprintf("  V2  phase-2  = %.6g   (SE %.5g)\n", x$V2, x$se2))
+  cat(sprintf("  V   total    = %.6g   (SE %.5g)\n", x$V, x$se))
+  cat(sprintf("  phase-2 share  V2/V = %.1f%%\n", 100 * x$prop_phase2))
+  invisible(x)
 }
 
 #' Export weightflow weights to a survey design
@@ -535,9 +850,19 @@ jack_mean <- function(jack, variable) {
 #' @param ... passed to the survey constructor.
 #' @return A `survey.design` / `svyrep.design` object.
 #' @export
+#' @family variance estimation
 as_svydesign <- function(object, ids, strata = NULL, weight_name = ".weight", ...) {
   if (!requireNamespace("survey", quietly = TRUE))
     stop("Install the 'survey' package to use as_svydesign().")
+  # A two-phase recipe cannot be exported as an ordinary single-phase design: the
+  # resulting svydesign would capture only the first-phase variance and silently
+  # undercover the two-phase variance V = V1 + V2. Refuse, as jackknife_weights()
+  # does, and point to the right tools.
+  if (inherits(object, "weighting_spec") && !is.null(.find_subsample_step(object$steps)))
+    stop("as_svydesign() does not support a two-phase design (the recipe has a ",
+         "step_subsample()): a single-phase survey design would omit the phase-2 ",
+         "variance component. Use bootstrap_weights() for the two-phase variance, ",
+         "or survey::twophase() to build a two-phase design directly.", call. = FALSE)
   if (inherits(object, "prepped_weighting_spec")) {
     df <- object$data; df[[weight_name]] <- object$final_weight
   } else if (is.data.frame(object)) {
@@ -590,14 +915,22 @@ as_svrepdesign <- function(object, ...) {
       type = "bootstrap", combined.weights = TRUE,
       scale = 1 / Rv, rscales = rep(1, Rv), mse = TRUE, ...)
   } else if (inherits(object, "weightflow_jack")) {
-    # delete-a-PSU jackknife: full (combined) replicate weights with per-replicate
-    # scale (n_h - 1)/n_h; survey centers at the point estimate (mse = TRUE).
+    # delete-a-PSU jackknife: full (combined) replicate weights; survey centers at
+    # the point estimate (mse = TRUE). When some replicates failed, the per-replicate
+    # scale must be (n_h - 1)/m_h with m_h the SURVIVING replicates in the stratum,
+    # not (n_h - 1)/n_h -- otherwise survey sums m_h < n_h terms with the full-n_h
+    # scale and biases the variance low (matches jackknife_estimate()'s correction).
+    strat_v <- object$rep_stratum[valid]
+    nh_v    <- object$rep_nh[valid]
+    mh_v    <- stats::ave(seq_along(strat_v), strat_v, FUN = length)  # survivors per stratum
+    rsc     <- (nh_v - 1) / mh_v
+    rsc[mh_v < 2L] <- 0          # a stratum reduced to <2 replicates contributes no variance
     survey::svrepdesign(
       data = object$data[keep, , drop = FALSE],
       weights = object$weights[keep],
       repweights = rw,
       type = "other", combined.weights = TRUE,
-      scale = 1, rscales = ((object$rep_nh - 1) / object$rep_nh)[valid],
+      scale = 1, rscales = rsc,
       mse = TRUE, ...)
   } else {
     stop("`object` must be a weightflow_boot or weightflow_jack object.")
@@ -616,6 +949,13 @@ as_svrepdesign <- function(object, ...) {
 #' @param weight_name name of the point-weight column to add.
 #' @param prefix prefix for the replicate-weight columns (`rep_1`, `rep_2`, ...).
 #' @param drop_zero keep only active units (point weight > 0).
+#' @param scramble disclosure control for a public-use file. When `TRUE`, the
+#'   replicate columns are randomly permuted (their `rscales` move with them, so the
+#'   variance is unchanged) and the design identifier columns (the `strata` and
+#'   `psu` columns used to build the replicates) are dropped from the output, so the
+#'   exported weights do not reveal the sampling design. The point weights and the
+#'   variance estimate are unaffected. Set a seed beforehand for a reproducible
+#'   permutation. The result carries attribute `"scrambled" = TRUE`.
 #' @return A data frame: the original columns, `weight_name`, and one column per
 #'   replicate. The number of replicates is in attribute `"R"`, and the
 #'   replication design in attributes `"type"`, `"scale"` and `"rscales"`.
@@ -637,13 +977,19 @@ as_svrepdesign <- function(object, ...) {
 #' }
 #' }
 #' @export
+#' @family variance estimation
 collect_replicate_weights <- function(object, weight_name = ".weight",
-                                      prefix = "rep_", drop_zero = TRUE) {
+                                      prefix = "rep_", drop_zero = TRUE,
+                                      scramble = FALSE) {
   if (!inherits(object, c("weightflow_boot", "weightflow_jack")))
     stop("`object` must be a weightflow_boot or weightflow_jack object.")
   weight_name <- .wf_outname(weight_name, "weight_name")
   prefix      <- .wf_outname(prefix, "prefix")
-  keep <- if (drop_zero) object$weights > 0 else rep(TRUE, length(object$weights))
+  scramble    <- .wf_flag(scramble, "scramble")
+  # Keep active units: finite and non-zero. Negative weights (a valid unbounded
+  # linear-calibration output) are ACTIVE and are kept, matching as_svrepdesign()
+  # and the totals estimators; only weight 0 / non-finite are dropped.
+  keep <- if (drop_zero) .wf_active(object$weights) else rep(TRUE, length(object$weights))
   out  <- object$data[keep, , drop = FALSE]
   reps <- object$replicates[keep, , drop = FALSE]
   # Drop failed replicates (all-NA columns) so downstream survey / srvyr does not
@@ -681,15 +1027,37 @@ collect_replicate_weights <- function(object, weight_name = ".weight",
   attr(out, "R") <- length(valid)
   # Replication design for survey/srvyr, correct per method: the bootstrap uses
   # scale 1/R with unit rscales; the delete-a-PSU jackknife uses scale 1 with
-  # per-replicate rscales (n_h - 1)/n_h (survey type = "other").
+  # per-replicate rscales (n_h - 1)/m_h, where m_h is the SURVIVING replicates in
+  # the stratum (= n_h when none failed), so dropping a failed replicate does not
+  # bias the variance low -- consistent with jackknife_estimate() and as_svrepdesign().
   if (inherits(object, "weightflow_jack")) {
+    strat_v <- object$rep_stratum[valid]
+    nh_v    <- object$rep_nh[valid]
+    mh_v    <- stats::ave(seq_along(strat_v), strat_v, FUN = length)
+    rsc     <- (nh_v - 1) / mh_v
+    rsc[mh_v < 2L] <- 0
     attr(out, "type")    <- "other"
     attr(out, "scale")   <- 1
-    attr(out, "rscales") <- ((object$rep_nh - 1) / object$rep_nh)[valid]
+    attr(out, "rscales") <- rsc
   } else {
     attr(out, "type")    <- "bootstrap"
     attr(out, "scale")   <- 1 / length(valid)
     attr(out, "rscales") <- rep(1, length(valid))
+  }
+  # Disclosure control for a public-use file: permute the replicate columns (moving
+  # their rscales in lockstep, so the variance is identical) and drop the design
+  # identifier columns, so the exported weights do not reveal the sampling design.
+  if (scramble) {
+    R       <- length(valid)
+    perm    <- sample.int(R)
+    repcols <- paste0(prefix, seq_len(R))
+    reord   <- out[, repcols, drop = FALSE][, perm, drop = FALSE]
+    colnames(reord) <- repcols
+    out[, repcols]       <- reord
+    attr(out, "rscales") <- attr(out, "rscales")[perm]
+    ids <- intersect(unique(c(object$strata, object$psu)), names(out))
+    if (length(ids)) out[ids] <- NULL
+    attr(out, "scrambled") <- TRUE
   }
   out
 }

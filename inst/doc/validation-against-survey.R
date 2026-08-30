@@ -61,7 +61,7 @@ compare <- function(w_sv, w_wf, label, base = d$pw) {
   invisible(diff)
 }
 
-## ----poststratify, eval = has_survey------------------------------------------
+## ----poststratify, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for post-stratification, points on the identity line."----
 library(survey)
 ps_tab <- as.data.frame(table(region = pop$region, sex = pop$sex))
 
@@ -76,7 +76,7 @@ w_sv   <- weights(des_ps)
 
 compare(w_sv, w_wf, "Post-stratification (region x sex)")
 
-## ----raking, eval = has_survey------------------------------------------------
+## ----raking, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for raking, points on the identity line."----
 wf <- weighting_spec(d, base_weights = pw) |>
   step_calibrate(method = "raking", totals = list(reg_tab, sex_tab, age_tab),
                  count = "Freq") |>
@@ -89,7 +89,7 @@ w_sv   <- weights(des_rk)
 
 compare(w_sv, w_wf, "Raking (region + sex + age group)")
 
-## ----greg-linear, eval = has_survey-------------------------------------------
+## ----greg-linear, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for linear GREG calibration, points on the identity line."----
 wf <- weighting_spec(d, base_weights = pw) |>
   step_calibrate(method = "linear", formula = ~ region + sex + age_grp,
                  totals = totals, calfun = "linear") |>
@@ -100,7 +100,7 @@ w_sv <- weights(calibrate(des, ~ region + sex + age_grp, population = totals,
 g_linear <- w_wf / d$pw
 compare(w_sv, w_wf, "Distance: linear (GREG)")
 
-## ----greg-raking, eval = has_survey-------------------------------------------
+## ----greg-raking, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for raking-distance calibration, points on the identity line."----
 wf <- weighting_spec(d, base_weights = pw) |>
   step_calibrate(method = "linear", formula = ~ region + sex + age_grp,
                  totals = totals, calfun = "raking", maxit = 500, tol = 1e-10) |>
@@ -111,7 +111,7 @@ w_sv <- weights(calibrate(des, ~ region + sex + age_grp, population = totals,
 g_raking <- w_wf / d$pw
 compare(w_sv, w_wf, "Distance: raking (exponential)")
 
-## ----greg-logit, eval = has_survey--------------------------------------------
+## ----greg-logit, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for logit-distance calibration, points on the identity line."----
 bnds <- c(0.5, 2)
 wf <- weighting_spec(d, base_weights = pw) |>
   step_calibrate(method = "linear", formula = ~ region + sex + age_grp,
@@ -124,7 +124,7 @@ w_sv <- weights(calibrate(des, ~ region + sex + age_grp, population = totals,
 g_logit <- w_wf / d$pw
 compare(w_sv, w_wf, "Distance: logit (bounded)")
 
-## ----gdist, eval = show_plot, fig.width = 6, fig.height = 3.6-----------------
+## ----gdist, eval = show_plot, fig.width = 6, fig.height = 3.6, fig.alt = "Density curves of the adjustment factors for the linear, raking and logit distances, centred near one."----
 gdist <- rbind(
   data.frame(distance = "linear", g = g_linear),
   data.frame(distance = "raking", g = g_raking),
@@ -141,7 +141,7 @@ ggplot2::ggplot(gdist, ggplot2::aes(g, fill = distance)) +
                 x = "g (adjustment factor)", y = "density", fill = NULL) +
   theme_wf()
 
-## ----integrative, eval = has_survey-------------------------------------------
+## ----integrative, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for integrative one-weight-per-household calibration, points on the identity line."----
 wf <- weighting_spec(d, base_weights = pw) |>
   step_calibrate(method = "linear", formula = ~ region + sex + age_grp,
                  totals = totals, cluster = "household_id",
@@ -159,7 +159,7 @@ cat("max within-household weight range (weightflow):", within_hh, "\n")
 
 compare(w_sv, w_wf, "Integrative (one weight per household)")
 
-## ----domain, eval = has_survey------------------------------------------------
+## ----domain, eval = has_survey, fig.alt = "Scatter of weightflow versus survey weights for domain-partitioned calibration, points on the identity line."----
 sex_by_region <- as.data.frame(table(region = pop$region, sex     = pop$sex))
 age_by_region <- as.data.frame(table(region = pop$region, age_grp = pop$age_grp))
 

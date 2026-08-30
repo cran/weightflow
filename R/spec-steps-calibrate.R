@@ -44,6 +44,13 @@
 #'   with all categories for each factor, and a single number for each
 #'   continuous auxiliary; weightflow builds the model.matrix totals internally
 #'   (you never handle the intercept or dropped reference category).
+#' @param population (all methods) a [reference_sample()] (or a plain frame) from
+#'   which the calibration targets are computed, instead of passing `margins` /
+#'   `totals`. Give `formula` naming the calibration variables; the targets are
+#'   the design-weighted sums over the reference (raking margins, poststratify
+#'   cells, or linear model-matrix totals). If the reference carries replicate
+#'   weights, [bootstrap_weights()] propagates its sampling variance. Not
+#'   combined with `margins` / `totals` or `by`.
 #' @param count (tidy `totals` only) string naming the counts column in the
 #'   totals data frame(s). All other columns are treated as category variables.
 #' @param by (tidy `totals` only) NULL, or a string naming a domain (partition)
@@ -85,10 +92,12 @@
 #' # Raking to population margins
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
-#'   step_calibrate(method = "raking",
+#'   step_calibrate(method = "raking", id = "calib_main",
 #'                  margins = list(sex    = c(table(population$sex)),
 #'                                 region = c(table(population$region)))) |>
 #'   prep()
+#' # the id ("calib_main") labels the step in the print-out and selects it in
+#' # collect_step_detail(fit, "calib_main")
 #'
 #' # ridge (penalized) calibration: relaxes the targets to control extreme
 #' # weights; a smaller penalty relaxes more. Uses only base R.
@@ -145,16 +154,23 @@
 #'                  totals = list(sex_by_region, age_by_region),
 #'                  count = "Freq", by = "region") |>
 #'   prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_calibrate <- function(spec, margins = NULL,
                            method = c("raking", "poststratify", "linear"),
                            formula = NULL, totals = NULL, count = NULL, by = NULL,
                            cluster = NULL, equal_within_cluster = FALSE,
                            calfun = c("linear", "logit", "raking"), bounds = NULL,
-                           maxit = 50L, tol = 1e-6, penalty = NULL) {
+                           maxit = 50L, tol = 1e-6, penalty = NULL,
+                           population = NULL, id = NULL) {
   method <- match.arg(method)
   calfun <- match.arg(calfun)
+  equal_within_cluster <- .wf_flag(equal_within_cluster, "equal_within_cluster")
+  id <- .wf_id(id)
   # N4-1: validate maxit/tol here too. Unvalidated, `maxit = "a"` made the raking
   # loop `while (it < "a")` TRUE forever (lexicographic), hanging prep() with no
   # exit when the margins do not converge; `maxit = NA` gave an opaque error.
@@ -168,6 +184,7 @@ step_calibrate <- function(spec, margins = NULL,
                     all(vapply(totals, function(t)
                           is.data.frame(t) || (is.numeric(t) && length(t) == 1L),
                           logical(1)))
+  if (is.null(population)) {
   if (method %in% c("raking", "poststratify")) {
     # Accept the classic `margins` (named list of named vectors) or the tidy
     # `totals`: a data frame (post-stratification) or a list of data frames
@@ -178,6 +195,20 @@ step_calibrate <- function(spec, margins = NULL,
       stop(paste0("'", method, "' requires either `margins` (a named list) or ",
                   "`totals` (a data frame, or a list of data frames for raking, ",
                   "with category columns and a counts column named by `count`)."))
+    # A single data frame is a JOINT table (post-stratification); raking takes a
+    # LIST of margin tables. Passing one data frame to raking used to crash at
+    # apply ("attempt to set an attribute on NULL"); catch it here (parity with
+    # the linear/GREG constructor).
+    if (method == "raking" && totals_is_df)
+      stop(paste0("method = \"raking\" needs `totals` as a LIST of data frames, one per margin ",
+                  "(e.g. list(sex_tab, age_tab)). A single data frame is a joint table: use ",
+                  "method = \"poststratify\" for that."), call. = FALSE)
+    # CR-2: both supplied -> the tidy `totals` path wins and `margins` would be
+    # dropped silently, against the package's "ignored arguments warn" policy.
+    if (has_margins && (totals_is_df || totals_is_list))
+      warning(sprintf(paste0("Both `margins` and `totals` were supplied for method = \"%s\"; ",
+                            "`totals` takes precedence and `margins` is ignored."), method),
+              call. = FALSE)
     if (has_margins) {
       bad <- setdiff(names(margins), names(spec$data))
       if (length(bad))
@@ -208,13 +239,19 @@ step_calibrate <- function(spec, margins = NULL,
                        count, paste(names(d), collapse = ", ")))
     }
   } else {                                   # linear
+    if (!is.null(margins))
+      warning("`margins` is ignored with method = \"linear\" (which uses `formula` + ",
+              "`totals`); use method = \"raking\" / \"poststratify\" to calibrate to margins.",
+              call. = FALSE)
     if (is.null(formula) || is.null(totals))
       stop("method = 'linear' requires `formula` and `totals`.")
-    if (totals_is_df) {
-      if (is.null(count) || !is.character(count) || length(count) != 1L ||
-          !count %in% names(totals))
-        stop("When `totals` is a data frame, `count` must name the counts column of `totals`.")
-    }
+    if (totals_is_df)
+      stop(paste0("method = 'linear' does not take a single data frame as `totals` ",
+                  "(that is the post-stratification format). Use a named numeric vector ",
+                  "aligned with the model.matrix columns, e.g. c(`(Intercept)` = N, ",
+                  "regionSouth = ...), or the tidy NAMED list with one data frame/number ",
+                  "per auxiliary, e.g. totals = list(region = <df>, age = <number>)."),
+           call. = FALSE)
     if (totals_is_list) {
       # tidy linear: named list of data frames (categorical) / numbers (continuous)
       if (is.null(names(totals)))
@@ -223,6 +260,17 @@ step_calibrate <- function(spec, margins = NULL,
           (is.null(count) || !is.character(count) || length(count) != 1L))
         stop("When `totals` contains data frames, `count` must name their counts column.")
     }
+  }
+  } else {
+    # Targets come from a weighted reference survey (reference_sample) or a frame.
+    if (!is.data.frame(population))
+      stop("`population` must be a data.frame or a reference_sample().", call. = FALSE)
+    if (is.null(formula) || !inherits(formula, "formula"))
+      stop("With `population`, `formula` names the calibration variables (e.g. ~ region + sex).", call. = FALSE)
+    if (!is.null(margins) || !is.null(totals))
+      stop("With `population`, do not also pass `margins`/`totals`; the targets are computed from the reference.", call. = FALSE)
+    if (!is.null(by))
+      stop("`population` combined with `by` (per-domain calibration) is not supported yet.", call. = FALSE)
   }
   if (!is.null(by)) {
     if (!is.character(by) || length(by) != 1L)
@@ -239,14 +287,19 @@ step_calibrate <- function(spec, margins = NULL,
   if (method == "linear" && calfun == "logit" && is.null(bounds))
     stop("calfun = 'logit' requires `bounds` = c(L, U).")
   if (!is.null(bounds)) {
-    if (length(bounds) != 2L || bounds[1] >= 1 || bounds[2] <= 1)
+    if (!is.numeric(bounds) || length(bounds) != 2L || anyNA(bounds) ||
+        any(!is.finite(bounds)))
+      stop("`bounds` must be a numeric vector c(L, U) of two finite numbers.")
+    if (bounds[1] >= 1 || bounds[2] <= 1)
       stop("`bounds` must be c(L, U) with L < 1 < U.")
   }
   if (!is.null(penalty)) {
     if (method != "linear")
       stop("`penalty` (ridge calibration) is only available with method = 'linear'.")
-    if (!is.null(bounds) || calfun == "logit")
-      stop("`penalty` (ridge calibration) cannot be combined with bounded calibration.")
+    if (!is.null(bounds) || calfun != "linear")
+      stop(paste0("`penalty` (ridge calibration) requires the linear (Euclidean) distance; it ",
+                  "cannot be combined with bounded calibration or the exponential (raking/logit) ",
+                  "distance, where the ridge relaxation is not defined."), call. = FALSE)
     if (!is.numeric(penalty) || any(penalty <= 0))
       stop("`penalty` must be a positive scalar or a positive named vector of costs.")
   }
@@ -288,11 +341,12 @@ step_calibrate <- function(spec, margins = NULL,
       bounds  = bounds,
       maxit   = maxit,
       tol     = tol,
-      penalty = penalty
+      penalty = penalty,
+      population = population
     ),
     class = c("step_calibrate", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Optional step: weight trimming ----------------------------------------
@@ -313,8 +367,10 @@ step_calibrate <- function(spec, margins = NULL,
 #' @param spec a weighting_spec.
 #' @param max_ratio number. Upper cap. Its meaning depends on `reference`. E.g.
 #'   with reference = "base" and max_ratio = 4, no weight may exceed 4 times its
-#'   design weight.
-#' @param min_ratio number or NULL. Lower floor (same units as max_ratio).
+#'   design weight. Must be greater than 1 for reference = "base"/"median" (a
+#'   multiplier) and greater than 0 for reference = "value" (an absolute weight).
+#' @param min_ratio number or NULL. Lower floor (same units as max_ratio); if
+#'   supplied, must be greater than 0 and below `max_ratio`.
 #' @param reference "base" (multiple of each unit's base weight),
 #'   "median" (multiple of the median of current weights) or
 #'   "value" (absolute weight value).
@@ -326,13 +382,41 @@ step_calibrate <- function(spec, margins = NULL,
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_trim(max_ratio = 3, reference = "base")
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_trim <- function(spec, max_ratio, min_ratio = NULL,
                       reference = c("base", "median", "value"),
-                      redistribute = TRUE, by = NULL, maxit = 50L) {
+                      redistribute = TRUE, by = NULL, maxit = 50L, id = NULL) {
   reference <- match.arg(reference)
-  if (missing(max_ratio)) stop("`max_ratio` is required.")
+  if (missing(max_ratio)) stop("`max_ratio` is required.", call. = FALSE)
+  if (!is.numeric(max_ratio) || length(max_ratio) != 1L || !is.finite(max_ratio))
+    stop("`max_ratio` must be a single finite number.", call. = FALSE)
+  # Domain depends on the reference: a multiplier for "base"/"median" (must be
+  # above 1, else the cap sits at or below the reference and crushes every weight
+  # to it, distorting the total), an absolute weight for "value" (must be > 0).
+  if (reference %in% c("base", "median")) {
+    if (max_ratio <= 1)
+      stop(sprintf(paste0("`max_ratio` must be greater than 1 for reference = \"%s\" (got %s): ",
+                          "it is a multiple of the reference weight, so a cap at or below 1 ",
+                          "would clamp every weight down to the reference and distort the total. ",
+                          "Use reference = \"value\" if you meant an absolute cap."),
+                   reference, format(max_ratio)), call. = FALSE)
+  } else if (max_ratio <= 0) {                    # "value": absolute cap
+    stop(sprintf(paste0("`max_ratio` must be greater than 0 for reference = \"value\" (got %s): ",
+                        "it is an absolute weight cap."),
+                 format(max_ratio)), call. = FALSE)
+  }
+  if (!is.null(min_ratio)) {
+    if (!is.numeric(min_ratio) || length(min_ratio) != 1L || !is.finite(min_ratio))
+      stop("`min_ratio` must be a single finite number.", call. = FALSE)
+    if (min_ratio <= 0)
+      stop(sprintf("`min_ratio` must be greater than 0 (got %s).", format(min_ratio)),
+           call. = FALSE)
+  }
   step <- structure(
     list(
       label        = sprintf("trimming (%s, cap %s)", reference, max_ratio),
@@ -345,7 +429,7 @@ step_trim <- function(spec, max_ratio, min_ratio = NULL,
     ),
     class = c("step_trim", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 #' Kish design effect from unequal weighting
@@ -406,10 +490,19 @@ design_effect <- function(w) {
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_round(digits = 0) |> prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
-step_round <- function(spec, digits = 0L, method = c("nearest", "preserve_total")) {
+#' @family weighting steps
+step_round <- function(spec, digits = 0L, method = c("nearest", "preserve_total"), id = NULL) {
   method <- match.arg(method)
+  if (!is.numeric(digits) || length(digits) != 1L || !is.finite(digits) ||
+      digits < 0 || digits != round(digits))
+    stop("`digits` must be a single non-negative whole number (e.g. 0 for integers).",
+         call. = FALSE)
+  digits <- as.integer(digits)
   step <- structure(
     list(
       label  = sprintf("rounding (%s, %d decimals)", method, digits),
@@ -418,7 +511,7 @@ step_round <- function(spec, digits = 0L, method = c("nearest", "preserve_total"
     ),
     class = c("step_round", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Model calibration (Wu & Sitter 2001) ----------------------------------
@@ -444,6 +537,11 @@ step_round <- function(spec, digits = 0L, method = c("nearest", "preserve_total"
 #' y_model(income ~ age + sex, engine = "glm")
 y_model <- function(formula, engine = c("glm", "tree", "forest", "boost"), family = NULL) {
   engine <- match.arg(engine)
-  if (!inherits(formula, "formula")) stop("`formula` must be a formula y ~ x.")
-  list(formula = formula, engine = engine, family = family)
+  # Require a TWO-sided formula: a one-sided `~ age` is a formula too but has no
+  # study variable on the left, and would fail cryptically when the model is fit.
+  if (!inherits(formula, "formula") || length(formula) != 3L)
+    stop("`formula` in y_model() must be a formula with two sides, y ~ x (the study variable on the left).",
+         call. = FALSE)
+  structure(list(formula = formula, engine = engine, family = family),
+            class = "wf_y_model")
 }

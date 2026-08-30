@@ -408,7 +408,7 @@ define them (here, <code>region</code>):</p>
 <span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt; Data    : 467 cases</span></span>
 <span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
 <span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (weighting class)</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (weighting class)  [nonresponse_1]</span></span>
 <span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
 <span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
@@ -471,7 +471,7 @@ misspecified model.</p>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; Data    : 467 cases</span></span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (propensity: logit, 5 classes)</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (propensity: logit, 5 classes)  [nonresponse_1]</span></span>
 <span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
 <span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
@@ -618,7 +618,7 @@ calibrate to external population totals instead.</p>
 <span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; Data    : 467 cases</span></span>
 <span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; Base wts: pw</span></span>
 <span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (calibration: linear, sample-level)</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt;   1. nonresponse (calibration: linear, sample-level)  [nonresponse_1]</span></span>
 <span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
 <span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
@@ -676,6 +676,13 @@ engines relax functional-form assumptions. Using propensity classes
 when the model is imperfect, at the cost of some efficiency. In all
 cases, model the response on auxiliaries that are both predictive of
 responding and related to the survey outcomes.</p>
+</div>
+<div id="see-also" class="section level2">
+<h2>See also</h2>
+<p>To recover the fitted propensities and see, unit by unit, what the
+adjustment did, use <code>collect_propensities()</code> and
+<code>collect_step_detail()</code>; the full quality-control flow is in
+<code>vignette(&quot;inspecting-auditing&quot;)</code>.</p>
 </div>
 
 

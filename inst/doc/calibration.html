@@ -419,11 +419,11 @@ categories, and <code>poststratify</code> takes that one variable:</p>
 <span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>                 <span class="at">margins =</span> <span class="fu">list</span>(<span class="at">region =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>region)))) <span class="sc">|&gt;</span></span>
 <span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
 <span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt;   variable category target prev_total    factor</span></span>
-<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570  1487.5000 1.0554622</span></span>
-<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250  1210.0000 1.0330579</span></span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927   800.0000 1.1587500</span></span>
-<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748   873.3333 0.8564885</span></span></code></pre></div>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt;   variable category target prev_total    factor  n</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570  1487.5000 1.0554622 78</span></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250  1210.0000 1.0330579 72</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927   800.0000 1.1587500 52</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748   873.3333 0.8564885 68</span></span></code></pre></div>
 <p>The <code>poststratify</code> method works on exactly one categorical
 variable. To post-stratify on <strong>several</strong> variables the
 post-strata are their <strong>interaction</strong> (every combination of
@@ -482,13 +482,13 @@ are met simultaneously.</p>
 <span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>                                <span class="at">sex    =</span> <span class="fu">c</span>(<span class="fu">table</span>(population<span class="sc">$</span>sex)))) <span class="sc">|&gt;</span></span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
 <span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>wf<span class="sc">$</span>steps[[<span class="dv">2</span>]]<span class="sc">$</span>diagnostics</span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;   variable category target achieved</span></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570     1570</span></span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250     1250</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927      927</span></span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748      748</span></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; 5      sex        F   2311     2311</span></span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; 6      sex        M   2184     2184</span></span></code></pre></div>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;   variable category target achieved   n</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; 1   region    North   1570     1570  78</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; 2   region    South   1250     1250  72</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; 3   region     East    927      927  52</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; 4   region     West    748      748  68</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; 5      sex        F   2311     2311 130</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; 6      sex        M   2184     2184 140</span></span></code></pre></div>
 <p>Raking fits an implicit log-linear model with main effects only: it
 matches each margin but says nothing about the interactions. As a result
 it does not reproduce the counts of the cross-classification (e.g. the
@@ -615,6 +615,14 @@ a weight. When a working model for the outcome is available and the
 auxiliaries are known at the unit level for the whole population, the
 model-calibration approach (see the <em>Model calibration</em> article)
 can be more efficient still.</p>
+</div>
+<div id="see-also" class="section level2">
+<h2>See also</h2>
+<p>To calibrate to a <strong>survey</strong> instead of a census frame
+(estimated totals, with their variance propagated), see
+<code>vignette(&quot;reference-survey&quot;)</code>. To inspect what each step did
+unit by unit and gate a run on the quality alerts, see
+<code>vignette(&quot;inspecting-auditing&quot;)</code>.</p>
 </div>
 <div id="references" class="section level2">
 <h2>References</h2>

@@ -42,8 +42,8 @@
   type <- match.arg(type)
   if (length(x) != 1L || !is.finite(x)) return("&ndash;")
   switch(type,
-    weight = format(round(x, 3), big.mark = ",", trim = TRUE),
-    count  = format(round(x),    big.mark = ",", trim = TRUE),
+    weight = format(round(x, 3), big.mark = ",", trim = TRUE, scientific = FALSE),
+    count  = format(round(x),    big.mark = ",", trim = TRUE, scientific = FALSE),
     prop   = formatC(x, format = "f", digits = 3),
     factor = formatC(x, format = "f", digits = 4),
     pct    = if (abs(x) < 5e-9) "0.0%" else sprintf("%+.1f%%", x))
@@ -104,7 +104,9 @@
   aa  <- suppressWarnings(as.numeric(as.character(df$achieved)))
   rel <- 100 * (aa - tt) / tt
   nm  <- .t("rel. diff (%)", "dif. rel. (%)", lang)
-  df[[nm]] <- ifelse(is.finite(rel), ifelse(abs(rel) < 5e-9, "0.00%", sprintf("%+.2f%%", rel)), "-")
+  # < 0.005 rounds to 0.00 at two decimals, so show a plain "0.00%" (no misleading
+  # "+0.00%" sign); non-finite (e.g. target 0) shows "-", not a green "+0.000".
+  df[[nm]] <- ifelse(is.finite(rel), ifelse(abs(rel) < 0.005, "0.00%", sprintf("%+.2f%%", rel)), "-")
   new <- setdiff(names(df), nm)
   ord <- append(new, nm, after = match("achieved", new))
   df[, ord, drop = FALSE]
@@ -118,13 +120,17 @@
   # display only, never touches a value used in a computation.
   for (nm in names(df)) if (is.numeric(df[[nm]])) {
     col <- df[[nm]]; fin <- is.finite(col)
-    df[[nm]] <- if (any(fin) && all(col[fin] == round(col[fin])))
-      format(col, big.mark = ",", trim = TRUE)
-    else round(col, 4)
+    out <- if (any(fin) && all(col[fin] == round(col[fin])))
+      format(col, big.mark = ",", trim = TRUE, scientific = FALSE)
+    else format(round(col, 4), trim = TRUE, scientific = FALSE)
+    out[!fin] <- NA_character_            # NA/Inf -> rendered as a dash below
+    df[[nm]] <- out
   }
   hd <- paste0("<th scope='col'>", .html_escape(names(df)), "</th>", collapse = "")
-  rows <- apply(df, 1, function(r)
-    paste0("<tr>", paste0("<td>", .html_escape(as.character(r)), "</td>", collapse = ""), "</tr>"))
+  rows <- apply(df, 1, function(r) {
+    cells <- ifelse(is.na(r), "&ndash;", .html_escape(as.character(r)))  # NA -> dash, like the rest of the report
+    paste0("<tr>", paste0("<td>", cells, "</td>", collapse = ""), "</tr>")
+  })
   sprintf("<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table>",
           hd, paste(rows, collapse = ""))
 }
@@ -178,7 +184,7 @@
   paste0(grid, paste(axln, collapse = ""), tick, xtk, ytk, xl, yl)
 }
 
-.svg_evolution <- function(labels, y, w = 640L, h = 190L) {
+.svg_evolution <- function(labels, y, w = 640L, h = 190L, lang = "en") {
   # N-20: skip the plot if any deff is non-finite (Inf overflow / NaN from
   # all-zero base weights); range()/diff()/any()/min() would otherwise error.
   n <- length(y); if (n < 2L || !all(is.finite(y))) return("")
@@ -210,9 +216,15 @@
     ann <- paste0(ann, sprintf('<text x="%.1f" y="%.1f" text-anchor="middle" font-size="12" fill="#065f46">&#9660;</text>',
                                sx(jj), sy(y[jj]) + 16))
   }
-  paste0('<svg viewBox="0 0 ', w, ' ', h,
+  svg <- paste0('<svg viewBox="0 0 ', w, ' ', h,
          '" width="100%" role="img" aria-label="Kish design effect by stage" font-family="-apple-system,Segoe UI,Roboto,sans-serif"><title>deff_K by stage</title>',
          grid, ytk, line, dots, xtk, ann, '</svg>')
+  ttl <- .t("Kish Design Effect Across Weighting Steps",
+            "Efecto de dise&ntilde;o de Kish por paso de ponderaci&oacute;n", lang)
+  leg <- if (nzchar(ann)) sprintf("<div class='muted' style='font-size:13px;margin-top:4px;text-align:center'>%s</div>",
+    .t("<span style='color:#b45309'>&#9650;</span> largest rise in deff_K &#183; <span style='color:#065f46'>&#9660;</span> largest drop",
+       "<span style='color:#b45309'>&#9650;</span> mayor aumento del deff_K &#183; <span style='color:#065f46'>&#9660;</span> mayor ca&iacute;da", lang)) else ""
+  paste0("<div class='viz-h'>", ttl, "</div>", svg, leg)
 }
 
 .svg_frame <- function(body, w, h, title = "diagnostic plot") sprintf(
@@ -238,7 +250,7 @@
 }
 
 # Scatter of weight before (x) vs after (y), with a y = x reference line.
-.svg_scatter <- function(x, y, w = 330, h = 215, cap = 3000L, lang = "en") {
+.svg_scatter <- function(x, y, w = 330, h = 215, cap = 3000L, lang = "en", title = NULL) {
   ml <- 54; mr <- 8; mt <- 8; mb <- 32; pw <- w - ml - mr; ph <- h - mt - mb
   i <- .thin_scatter(x, y, cap); x <- x[i]; y <- y[i]
   xr <- range(x); yr <- range(c(y, x))
@@ -253,33 +265,61 @@
                  sx(lo), sy(lo), sx(hi), sy(hi))
   lbl <- sprintf('<text x="%.1f" y="%.1f" text-anchor="end" font-size="10" fill="#6b7280">y = x</text>',
                  sx(hi) - 3, sy(hi) + 12)
-  .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, xr, yr, .t("weight before", "peso antes", lang), .t("weight after", "peso despu\u00e9s", lang), sx, sy),
+  svg <- .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, xr, yr, .t("weight before", "peso antes", lang), .t("weight after", "peso despu\u00e9s", lang), sx, sy),
                     pts, ln, lbl), w, h)
+  if (is.null(title)) svg else paste0("<div class='viz-h'>", title, "</div>", svg)
 }
 
 # Histogram of a per-unit quantity (default: the adjustment factor after/before),
 # with a reference line at 1.
-.svg_hist <- function(v, xlab = "adjustment factor (after / before)", w = 330, h = 215, refline = 1, lang = "en") {
+.svg_hist <- function(v, xlab = "adjustment factor (after / before)", w = 330, h = 215,
+                      refline = 1, lang = "en", title = NULL, density = FALSE) {
   ml <- 48; mr <- 8; mt <- 8; mb <- 32; pw <- w - ml - mr; ph <- h - mt - mb
   v <- v[is.finite(v)]
   if (!length(v)) return("")
-  hh <- graphics::hist(v, breaks = 30, plot = FALSE)
-  xr <- range(hh$breaks); yr <- c(0, max(hh$counts))
-  if (diff(xr) == 0) xr <- xr + c(-1, 1)
-  if (yr[2] == 0) yr[2] <- 1
-  sx <- function(z) ml + (z - xr[1]) / diff(xr) * pw
-  sy <- function(z) mt + ph - (z - yr[1]) / diff(yr) * ph
-  bars <- paste(sprintf('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5" fill="#b7abdf"/>',
-                sx(hh$breaks[-length(hh$breaks)]), sy(hh$counts),
-                pmax(sx(hh$breaks[-1]) - sx(hh$breaks[-length(hh$breaks)]) - 0.5, 0.5),
-                pmax(sy(0) - sy(hh$counts), 0)), collapse = "")
+  uv <- unique(round(v, 8))
+  ylab <- .t("count", "conteo", lang)
+  if (length(uv) <= 30L) {
+    # Few distinct values (e.g. adjustment-cell factors, integer 1/prob counts): a
+    # fixed-bin histogram would show mostly empty bins and a few tall spikes. Draw a
+    # frequency-by-VALUE dot plot (lollipop) instead -- one stem + dot per value.
+    lv   <- sort(uv)
+    cnts <- as.integer(table(factor(round(v, 8), levels = lv)))
+    xr <- range(lv); xr <- if (diff(xr) == 0) xr + c(-0.5, 0.5) else xr + diff(xr) * c(-0.08, 0.08)
+    yr <- c(0, max(cnts, 1))
+    sx <- function(z) ml + (z - xr[1]) / diff(xr) * pw
+    sy <- function(z) mt + ph - (z - yr[1]) / diff(yr) * ph
+    xx <- sx(lv); yy <- sy(cnts); y0 <- sy(0)
+    stems <- paste(sprintf('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#b7abdf" stroke-width="2"/>',
+                   xx, y0, xx, yy), collapse = "")
+    dots  <- paste(sprintf('<circle cx="%.1f" cy="%.1f" r="3.2" fill="#3d3580"/>', xx, yy), collapse = "")
+    bars  <- paste0(stems, dots)
+  } else {
+    hh <- graphics::hist(v, breaks = 30, plot = FALSE)
+    dd <- if (density) tryCatch(stats::density(v), error = function(e) NULL) else NULL
+    if (!is.null(dd)) dd$c <- dd$y * length(v) * diff(hh$breaks)[1]   # density -> count scale
+    xr <- range(hh$breaks); if (diff(xr) == 0) xr <- xr + c(-1, 1)
+    yr <- c(0, max(max(hh$counts), if (!is.null(dd)) max(dd$c) else 0, 1))
+    sx <- function(z) ml + (z - xr[1]) / diff(xr) * pw
+    sy <- function(z) mt + ph - (z - yr[1]) / diff(yr) * ph
+    bars <- paste(sprintf('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="1.5" fill="#b7abdf"/>',
+                  sx(hh$breaks[-length(hh$breaks)]), sy(hh$counts),
+                  pmax(sx(hh$breaks[-1]) - sx(hh$breaks[-length(hh$breaks)]) - 0.5, 0.5),
+                  pmax(sy(0) - sy(hh$counts), 0)), collapse = "")
+    if (!is.null(dd)) {
+      keep <- dd$x >= xr[1] & dd$x <= xr[2]
+      bars <- paste0(bars, sprintf('<polyline points="%s" fill="none" stroke="#3d3580" stroke-width="1.6" opacity="0.9"/>',
+                     paste(sprintf("%.1f,%.1f", sx(dd$x[keep]), sy(dd$c[keep])), collapse = " ")))
+    }
+  }
   vl <- if (!is.null(refline) && refline >= xr[1] && refline <= xr[2])
     paste0(sprintf('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#6b7280" stroke-dasharray="4 3"/>',
                    sx(refline), mt, sx(refline), mt + ph),
            sprintf('<text x="%.1f" y="%.1f" font-size="10" fill="#6b7280">%s</text>',
                    sx(refline) + 3, mt + 9, .t("factor = 1", "factor = 1", lang))) else ""
-  .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, xr, yr, xlab, .t("count", "conteo", lang), sx, sy),
+  svg <- .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, xr, yr, xlab, ylab, sx, sy),
                     bars, vl), w, h)
+  if (is.null(title)) svg else paste0("<div class='viz-h'>", title, "</div>", svg)
 }
 
 # Per-step visual, dispatched by step type. Steps that only zero-out weights,
@@ -293,17 +333,23 @@
   if (inherits(step, .no_visual)) return("")
   keep <- .wf_active(prev) & .wf_active(cur)
   if (!any(keep)) return("")
-  sc   <- tryCatch(.svg_scatter(prev[keep], cur[keep], lang = lang), error = function(e) "")
+  sc   <- tryCatch(.svg_scatter(prev[keep], cur[keep], lang = lang,
+                     title = .t("Scatter plot of previous vs. updated weights",
+                                "Dispersi&oacute;n de pesos previos vs. actualizados", lang)),
+                   error = function(e) "")
   fac  <- (cur / prev)[keep]
   xlab <- if (inherits(step, "step_select_within"))
             .t("persons represented (1/prob)", "personas representadas (1/prob)", lang)
           else .t("adjustment factor (after / before)", "factor de ajuste (despu\u00e9s / antes)", lang)
-  hi   <- tryCatch(.svg_hist(fac, xlab = xlab, lang = lang), error = function(e) "")
+  hi   <- tryCatch(.svg_hist(fac, xlab = xlab, lang = lang,
+                     title = .t("Distribution of adjustment factors",
+                                "Distribuci&oacute;n de los factores de ajuste", lang)),
+                   error = function(e) "")
   if (!nzchar(sc) && !nzchar(hi)) return("")
   note <- if (sum(keep) > 3000L)
     sprintf("<p class='muted'>%s</p>", .t(
       sprintf("Showing 3,000 of %s points (both tails and the largest departures from y = x are kept).", format(sum(keep), big.mark = ",")),
-      sprintf("Se muestran 3.000 de %s puntos (se conservan ambas colas y las mayores desviaciones de y = x).", format(sum(keep), big.mark = ",")), lang)) else ""
+      sprintf("Se muestran 3,000 de %s puntos (se conservan ambas colas y las mayores desviaciones de y = x).", format(sum(keep), big.mark = ",")), lang)) else ""
   sprintf("<div class='viz'><div>%s</div><div>%s</div></div>%s", sc, hi, note)
 }
 
@@ -314,7 +360,7 @@
   if (!is.null(ptab)) {
     ptab <- ptab[order(-ptab$partial_R), , drop = FALSE]
     ptab$partial_R <- round(ptab$partial_R, 4)
-    ph <- paste0(sprintf("<p class='muted'>%s</p>", .t("Partial R-indicators:", "R-indicadores parciales:", lang)), .df_to_html(ptab))
+    ph <- paste0(sprintf("<p class='muted'>%s</p>", .t("Partial R-indicators (0&ndash;0.5):", "R-indicadores parciales (0&ndash;0.5):", lang)), .df_to_html(ptab))
   }
   if (!is.null(ri$num_aux) && length(ri$num_aux))
     ph <- paste0(ph, sprintf(
@@ -324,10 +370,10 @@
   sprintf(
     .t("<div class='ri'><h4>Response representativity (R-indicator)</h4>
 <p class='muted'>Design-weighted logistic of response on <code>%s</code> (n = %s). Closer to 1 = more representative response; the partials show which variable drives the gap.</p>
-<p class='ri-val'><strong>R = %.3f</strong></p>%s</div>",
+<p class='ri-val'><strong>R = %.3f</strong> <span class='muted'>(0&ndash;1)</span></p>%s</div>",
        "<div class='ri'><h4>Representatividad de la respuesta (R-indicador)</h4>
 <p class='muted'>Log\u00edstica ponderada por dise\u00f1o de la respuesta sobre <code>%s</code> (n = %s). M\u00e1s cerca de 1 = respuesta m\u00e1s representativa; los parciales muestran qu\u00e9 variable explica la brecha.</p>
-<p class='ri-val'><strong>R = %.3f</strong></p>%s</div>", lang),
+<p class='ri-val'><strong>R = %.3f</strong> <span class='muted'>(0&ndash;1)</span></p>%s</div>", lang),
     .html_escape(paste(ri$aux, collapse = ", ")),
     format(ri$n_eligible, big.mark = ","), ri$R, ph)
 }
@@ -345,11 +391,19 @@
   if (is.null(dcal) || !all(c("variable", "category", "target") %in% names(dcal)))
     return("")                                               # e.g. linear/GREG: skip
   data <- object$data; fin <- object$final_weight
+  # With domain calibration (step_calibrate(by=)) the diagnostics carry a `domain`
+  # column and one target PER domain; achieved must be recomputed within that
+  # domain, not over the whole sample (which would compare a domain target against
+  # the global total and report spurious drift).
+  byvar <- object$steps[[kc]]$by
+  has_dom <- !is.null(byvar) && "domain" %in% names(dcal) && byvar %in% names(data)
   rows <- lapply(seq_len(nrow(dcal)), function(r) {
     v <- as.character(dcal$variable[r]); ct <- as.character(dcal$category[r])
     tg <- suppressWarnings(as.numeric(dcal$target[r]))
     if (!v %in% names(data) || is.na(tg)) return(NULL)
-    ach <- sum(fin[as.character(data[[v]]) == ct], na.rm = TRUE)
+    sel <- as.character(data[[v]]) == ct
+    if (has_dom) sel <- sel & as.character(data[[byvar]]) == as.character(dcal$domain[r])
+    ach <- sum(fin[sel], na.rm = TRUE)
     data.frame(variable = v, category = ct, target = round(tg), achieved = round(ach),
                `dev %` = round(if (tg != 0) 100 * (ach - tg) / tg else NA_real_, 2),
                check.names = FALSE, stringsAsFactors = FALSE)
@@ -429,7 +483,7 @@
 # Overlap (common-support) plot for ML nonresponse: two weighted histograms of
 # the estimated propensity phi-hat, respondents vs nonrespondents. Poor overlap
 # (little common support) is the visual warning about the MAR assumption.
-.svg_overlap <- function(p, resp, dw, lang = "en", w = 340, h = 170) {
+.svg_overlap <- function(p, resp, dw, lang = "en", w = 340, h = 170, title = NULL) {
   ok <- is.finite(p) & is.finite(dw); p <- p[ok]; resp <- as.logical(resp[ok]); dw <- dw[ok]
   if (length(p) < 20L || length(unique(resp)) < 2L) return("")
   ml <- 42; mr <- 8; mt <- 10; mb <- 30; pw <- w - ml - mr; ph <- h - mt - mb
@@ -451,9 +505,10 @@
   leg <- sprintf('<text x="%.1f" y="%.1f" font-size="10" fill="#2a78d6">%s</text><text x="%.1f" y="%.1f" font-size="10" fill="#e8941f">%s</text>',
     ml + 6, mt + 10, .t("respondents", "respondentes", lang),
     ml + 6, mt + 22, .t("nonrespondents", "no respondentes", lang))
-  .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, rng, c(0, ymax), "&phi;&#770;",
+  svg <- .svg_frame(paste0(.svg_axes(ml, mt, pw, ph, rng, c(0, ymax), "&phi;&#770;",
              .t("share", "proporci\u00f3n", lang), sx, sy),
              bar(hn, "#e8941f"), bar(hr, "#2a78d6"), leg), w, h, "propensity overlap")
+  if (is.null(title)) svg else paste0("<div class='viz-h'>", title, "</div>", svg)
 }
 
 # Potter (1990) MSE-optimal trimming curve: estimated bias^2 (rising as the cut

@@ -4,13 +4,17 @@
 \alias{step_drop_ineligible}
 \title{Drop ineligible (out-of-scope) units}
 \usage{
-step_drop_ineligible(spec, ineligible)
+step_drop_ineligible(spec, ineligible, id = NULL)
 }
 \arguments{
 \item{spec}{a weighting_spec.}
 
 \item{ineligible}{a 0/1 dummy column (1 = ineligible) or any logical
 condition (unquoted) that is TRUE for out-of-scope units.}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -37,3 +41,21 @@ weighting_spec(df, base_weights = pw) |>
   step_drop_ineligible(ineligible = ineligible) |>
   prep()
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_round]{step_round()}},
+\code{\link[=step_select_within]{step_select_within()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim]{step_trim()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}},
+\code{\link[=step_unknown_eligibility]{step_unknown_eligibility()}}
+}
+\concept{weighting steps}

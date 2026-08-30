@@ -18,7 +18,9 @@ step_calibrate(
   bounds = NULL,
   maxit = 50L,
   tol = 1e-06,
-  penalty = NULL
+  penalty = NULL,
+  population = NULL,
+  id = NULL
 )
 }
 \arguments{
@@ -93,6 +95,18 @@ model.matrix columns). The cost is scale-free: a large value keeps the
 constraint (near) exact, a small value relaxes it to control extreme weights
 when there are many auxiliaries. Under ridge the achieved totals no longer
 match the targets exactly; the diagnostics report the deviation.}
+
+\item{population}{(all methods) a \code{\link[=reference_sample]{reference_sample()}} (or a plain frame) from
+which the calibration targets are computed, instead of passing \code{margins} /
+\code{totals}. Give \code{formula} naming the calibration variables; the targets are
+the design-weighted sums over the reference (raking margins, poststratify
+cells, or linear model-matrix totals). If the reference carries replicate
+weights, \code{\link[=bootstrap_weights]{bootstrap_weights()}} propagates its sampling variance. Not
+combined with \code{margins} / \code{totals} or \code{by}.}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -124,10 +138,12 @@ where \eqn{c_j}{c_j} is the cost of missing constraint \eqn{j}{j}: as
 # Raking to population margins
 weighting_spec(sample_survey, base_weights = pw) |>
   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
-  step_calibrate(method = "raking",
+  step_calibrate(method = "raking", id = "calib_main",
                  margins = list(sex    = c(table(population$sex)),
                                 region = c(table(population$region)))) |>
   prep()
+# the id ("calib_main") labels the step in the print-out and selects it in
+# collect_step_detail(fit, "calib_main")
 
 # ridge (penalized) calibration: relaxes the targets to control extreme
 # weights; a smaller penalty relaxes more. Uses only base R.
@@ -185,3 +201,21 @@ weighting_spec(samp, base_weights = pw) |>
                  count = "Freq", by = "region") |>
   prep()
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_round]{step_round()}},
+\code{\link[=step_select_within]{step_select_within()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim]{step_trim()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}},
+\code{\link[=step_unknown_eligibility]{step_unknown_eligibility()}}
+}
+\concept{weighting steps}

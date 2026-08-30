@@ -33,9 +33,13 @@
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_unknown_eligibility(unknown = unknown_elig, by = "region",
 #'                            cluster = "household_id")
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
-step_unknown_eligibility <- function(spec, unknown, by = NULL, cluster = NULL) {
+#' @family weighting steps
+step_unknown_eligibility <- function(spec, unknown, by = NULL, cluster = NULL, id = NULL) {
   step <- structure(
     list(
       label   = if (is.null(cluster)) "unknown eligibility"
@@ -47,7 +51,7 @@ step_unknown_eligibility <- function(spec, unknown, by = NULL, cluster = NULL) {
     ),
     class = c("step_unknown_eligibility", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Step: within-household (sub)selection ---------------------------------
@@ -91,10 +95,14 @@ step_unknown_eligibility <- function(spec, unknown, by = NULL, cluster = NULL) {
 #' # simple random selection of two eligible persons per household
 #' weighting_spec(df, base_weights = pw) |>
 #'   step_select_within(n_eligible = n_elig, n_selected = 2)
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_select_within <- function(spec, prob = NULL, n_eligible = NULL,
-                               n_selected = NULL) {
+                               n_selected = NULL, id = NULL) {
   p <- substitute(prob)
   k <- substitute(n_eligible)
   m <- substitute(n_selected)
@@ -109,7 +117,7 @@ step_select_within <- function(spec, prob = NULL, n_eligible = NULL,
          n_eligible = k, n_selected = m, env = parent.frame()),
     class = c("step_select_within", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Step: drop ineligible (out-of-scope) units ----------------------------
@@ -137,15 +145,19 @@ step_select_within <- function(spec, prob = NULL, n_eligible = NULL,
 #' weighting_spec(df, base_weights = pw) |>
 #'   step_drop_ineligible(ineligible = ineligible) |>
 #'   prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
-step_drop_ineligible <- function(spec, ineligible) {
+#' @family weighting steps
+step_drop_ineligible <- function(spec, ineligible, id = NULL) {
   step <- structure(
     list(label = "drop ineligible", ineligible = substitute(ineligible),
          env = parent.frame()),
     class = c("step_drop_ineligible", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Step: nonresponse adjustment ------------------------------------------
@@ -292,8 +304,12 @@ step_drop_ineligible <- function(spec, ineligible) {
 #'   step_nonresponse(respondent = responded, method = "calibration",
 #'                    formula = ~ region + sex) |>
 #'   prep()
+#' @param id optional string: a stable identifier for this step, shown in the
+#'   recipe print-out and usable to select it in `collect_step_detail()`; defaults
+#'   to a derived `"<class>_<k>"`.
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
+#' @family weighting steps
 step_nonresponse <- function(spec, respondent,
                              method = c("weighting_class", "propensity", "calibration"),
                              by = NULL, formula = NULL,
@@ -305,15 +321,30 @@ step_nonresponse <- function(spec, respondent,
                              calfun = c("linear", "logit", "raking"),
                              bounds = NULL, penalty = NULL,
                              equal_within_cluster = FALSE,
-                             maxit = 50L, tol = 1e-6) {
+                             maxit = 50L, tol = 1e-6, id = NULL) {
   method <- match.arg(method)
   engine <- match.arg(engine)
   calfun <- match.arg(calfun)
-  if (!is.null(crossfit) && (!is.numeric(crossfit) || crossfit < 2))
-    stop("`crossfit` must be NULL or an integer >= 2 (number of folds).")
-  if (!is.null(num_classes) &&
-      (!is.numeric(num_classes) || length(num_classes) != 1L || num_classes < 2))
-    stop("`num_classes` must be NULL (continuous 1/p) or a single integer >= 2.")
+  equal_within_cluster <- .wf_flag(equal_within_cluster, "equal_within_cluster")
+  weight_model         <- .wf_flag(weight_model, "weight_model")
+  id <- .wf_id(id)
+  if (!is.null(crossfit)) {
+    # catch Inf, NA, non-integer (2.5) and length > 1, which used to be stored as
+    # NA_integer_ or trip a length-> 1 `||` and die cryptically in prep().
+    if (!is.numeric(crossfit) || length(crossfit) != 1L || !is.finite(crossfit) ||
+        crossfit < 2 || crossfit != round(crossfit))
+      stop("`crossfit` must be NULL or a single integer >= 2 (number of folds).", call. = FALSE)
+    crossfit <- as.integer(crossfit)
+  }
+  if (!is.null(num_classes)) {
+    if (!is.numeric(num_classes) || length(num_classes) != 1L || !is.finite(num_classes) ||
+        num_classes < 2 || num_classes != round(num_classes))
+      stop("`num_classes` must be NULL (continuous 1/p) or a single integer >= 2.", call. = FALSE)
+    num_classes <- as.integer(num_classes)
+  }
+  if (!is.null(crossfit_seed) &&
+      (!is.numeric(crossfit_seed) || length(crossfit_seed) != 1L || !is.finite(crossfit_seed)))
+    stop("`crossfit_seed` must be NULL or a single finite number.", call. = FALSE)
 
   # warn about arguments this method ignores, so incompatible combinations are
   # not silently dropped (e.g. engine = "forest" with method = "weighting_class").
@@ -346,13 +377,23 @@ step_nonresponse <- function(spec, respondent,
     # Calibration approach to nonresponse (two-phase; Sarndal & Lundstrom 2005).
     if (is.null(formula))
       stop("nonresponse method = 'calibration' requires `formula` (the auxiliaries).")
+    maxit <- .wf_count(maxit, "maxit", min = 1L)
+    if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) || tol <= 0)
+      stop("`tol` must be a single positive finite number.", call. = FALSE)
     if (calfun == "logit" && is.null(bounds))
       stop("calfun = 'logit' requires `bounds` = c(L, U).")
-    if (!is.null(bounds) && (length(bounds) != 2L || bounds[1] >= 1 || bounds[2] <= 1))
-      stop("`bounds` must be c(L, U) with L < 1 < U.")
+    if (!is.null(bounds)) {
+      if (!is.numeric(bounds) || length(bounds) != 2L || anyNA(bounds) || any(!is.finite(bounds)))
+        stop("`bounds` must be a numeric vector c(L, U) of two finite numbers.")
+      if (bounds[1] >= 1 || bounds[2] <= 1)
+        stop("`bounds` must be c(L, U) with L < 1 < U.")
+    }
     if (!is.null(penalty)) {
-      if (!is.null(bounds) || calfun == "logit")
-        stop("`penalty` (ridge) cannot be combined with bounded calibration.")
+      if (!is.null(bounds) || calfun != "linear")
+        stop(paste0("`penalty` (ridge) requires the linear (Euclidean) distance; it cannot be ",
+                    "combined with bounded calibration or the exponential (raking/logit) distance, ",
+                    "where the ridge relaxation is not defined and would be ignored silently."),
+             call. = FALSE)
       if (!is.numeric(penalty) || any(penalty <= 0))
         stop("`penalty` must be a positive scalar or a positive named vector.")
     }
@@ -400,7 +441,7 @@ step_nonresponse <- function(spec, respondent,
     ),
     class = c("step_nonresponse", "weighting_step")
   )
-  .add_step(spec, step)
+  .add_step(spec, step, id = id)
 }
 
 # --- Step: calibration -----------------------------------------------------

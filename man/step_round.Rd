@@ -4,7 +4,12 @@
 \alias{step_round}
 \title{Round the final weights}
 \usage{
-step_round(spec, digits = 0L, method = c("nearest", "preserve_total"))
+step_round(
+  spec,
+  digits = 0L,
+  method = c("nearest", "preserve_total"),
+  id = NULL
+)
 }
 \arguments{
 \item{spec}{a weighting_spec.}
@@ -14,6 +19,10 @@ step_round(spec, digits = 0L, method = c("nearest", "preserve_total"))
 \item{method}{"nearest" (simple rounding) or "preserve_total" (keeps the sum
 of weights). Note: "preserve_total" can break equality of weights within a
 cluster; if you need integer and equal weights per household, use "nearest".}
+
+\item{id}{optional string: a stable identifier for this step, shown in the
+recipe print-out and usable to select it in \code{collect_step_detail()}; defaults
+to a derived \code{"<class>_<k>"}.}
 }
 \value{
 The input \code{weighting_spec} with this step appended to its recipe. The
@@ -30,3 +39,21 @@ number of decimals.
 weighting_spec(sample_survey, base_weights = pw) |>
   step_round(digits = 0) |> prep()
 }
+\seealso{
+Other weighting steps:
+\code{\link[=step_assert]{step_assert()}},
+\code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
+\code{\link[=step_model_calibration]{step_model_calibration()}},
+\code{\link[=step_nonresponse]{step_nonresponse()}},
+\code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},
+\code{\link[=step_pseudoweight]{step_pseudoweight()}},
+\code{\link[=step_rescale]{step_rescale()}},
+\code{\link[=step_select_within]{step_select_within()}},
+\code{\link[=step_subsample]{step_subsample()}},
+\code{\link[=step_trim]{step_trim()}},
+\code{\link[=step_trim_calibrated]{step_trim_calibrated()}},
+\code{\link[=step_trim_weights]{step_trim_weights()}},
+\code{\link[=step_unknown_eligibility]{step_unknown_eligibility()}}
+}
+\concept{weighting steps}

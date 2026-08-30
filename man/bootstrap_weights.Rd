@@ -10,10 +10,12 @@ bootstrap_weights(
   strata = NULL,
   psu = NULL,
   m = NULL,
+  fpc = NULL,
   lonely_psu = c("certainty", "collapse"),
   seed = NULL,
   cores = 1L,
-  progress = TRUE
+  progress = TRUE,
+  .tp_component = c("full", "phase1", "phase2")
 )
 }
 \arguments{
@@ -25,6 +27,14 @@ bootstrap_weights(
 each unit is its own PSU; if \code{strata} is NULL a single stratum is assumed.}
 
 \item{m}{PSUs drawn per stratum (default \code{n - 1}).}
+
+\item{fpc}{optional first-stage finite-population correction: the name of a
+column holding the first-stage sampling fraction f_h (constant within
+stratum, in \verb{[0, 1]}), a single number applied to every stratum, or a numeric
+vector named by stratum level. \code{NULL} (default) is the with-replacement
+bootstrap (no correction). The correction folds \code{(1 - f_h)} into the Rao-Wu
+rescaling (Rao, Wu and Yue 1992; Beaumont and Patak 2012); \code{f_h = 0}
+reproduces the uncorrected result. Only available for the bootstrap.}
 
 \item{lonely_psu}{how to treat strata with a single PSU (which a
 with-replacement bootstrap cannot resample): "certainty" (default) treats
@@ -43,6 +53,11 @@ are identical to the serial run: the resampling is drawn up front with the
 seed and only the deterministic re-prep is parallelised.}
 
 \item{progress}{print progress every 25 replicates (serial only).}
+
+\item{.tp_component}{internal. For a two-phase recipe, \code{"full"} (default) draws
+the coupled factor; \code{"phase1"} / \code{"phase2"} draw only the phase-1 or phase-2
+component of the coupling. Used by \code{two_phase_variance()} to split
+\eqn{V = V_1 + V_2}; not for direct use.}
 }
 \value{
 An object of class \code{weightflow_boot} with the \code{replicates} matrix
@@ -70,4 +85,18 @@ spec <- weighting_spec(sample_survey, base_weights = pw) |>
 boot <- bootstrap_weights(spec, replicates = 50, strata = "region",
                           psu = "psu", seed = 1)
 boot_total(boot, "responded")
+# with a first-stage finite-population correction (per-stratum sampling fraction)
+d <- sample_survey; d$f <- 0.1
+spec_f <- weighting_spec(d, base_weights = pw)
+bootstrap_weights(spec_f, replicates = 50, strata = "region", psu = "psu",
+                  fpc = "f", seed = 1)
 }
+\seealso{
+Other variance estimation:
+\code{\link[=as_svydesign]{as_svydesign()}},
+\code{\link[=bootstrap_estimate]{bootstrap_estimate()}},
+\code{\link[=collect_replicate_weights]{collect_replicate_weights()}},
+\code{\link[=jackknife_estimate]{jackknife_estimate()}},
+\code{\link[=jackknife_weights]{jackknife_weights()}}
+}
+\concept{variance estimation}

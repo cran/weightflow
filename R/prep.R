@@ -22,7 +22,15 @@
 #'   warnings during prep(). Default FALSE: alerts are always computed, stored
 #'   on the object (`$alerts`) and shown in the HTML report, but not raised as
 #'   warnings, so they do not flood bootstrap/jackknife replicate fits.
-#' @return a "prepped_weighting_spec" object.
+#' @return a "prepped_weighting_spec" object. Every quality incident is recorded
+#'   in `$alerts` (readable with [weighting_alerts()] / [has_alerts()]),
+#'   regardless of `warn`. This includes warnings a step raises internally, such
+#'   as a calibration that could not meet its constraints: they are captured into
+#'   `$alerts` even when the surrounding warnings are suppressed, so `$alerts` is
+#'   the single reliable channel for programmatic quality control.
+#' @seealso [weightflow-alerts] for the catalogue of quality alerts prep() can
+#'   raise, [weighting_alerts()] / [has_alerts()] to read them, and
+#'   `vignette("inspecting-auditing")` for the full quality-control workflow.
 #' @examples
 #' rec <- weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_nonresponse(respondent = responded, method = "weighting_class", by = "region")
@@ -40,6 +48,13 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
     stop("`max_factor` must be NULL (no large-factor check) or a single positive number.",
          call. = FALSE)
   data <- spec$data
+  # NP-06: a non-probability spec carries a synthetic all-ones base column
+  # (".wf_base1") that a previous prep() drops from $data so it does not leak.
+  # Re-prepping the prepped spec would then find the column gone and read NULL
+  # base weights, silently collapsing every weight to 0. Re-materialise it.
+  if (isTRUE(spec$nonprob) && grepl("^\\.wf_base1", spec$base_weights %||% "") &&
+      !(spec$base_weights %in% names(data)))
+    data[[spec$base_weights]] <- 1
   w    <- data[[spec$base_weights]]
   attr(data, "weightflow_base_w") <- w     # available to step_trim(reference = "base")
 
@@ -50,7 +65,16 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
   for (i in seq_along(steps)) {
     w_before               <- w
     .check_step_labelled(steps[[i]], data)
-    res                    <- apply_step(steps[[i]], data, w)
+    # Capture any warning a step raises from inside apply_step() (e.g. calibration
+    # that could not meet its constraints, or a failed assertion set to warn) so it
+    # is recorded in `$alerts` alongside the weight/diagnostic alerts. The warning
+    # is NOT muffled: it still surfaces exactly as before. This is the single place
+    # a script can read to know a recipe had problems, even under suppressWarnings().
+    step_warnings <- character(0)
+    res <- withCallingHandlers(
+      apply_step(steps[[i]], data, w),
+      warning = function(cnd) step_warnings <<- c(step_warnings, conditionMessage(cnd))
+    )
     w                      <- res$weights
     if (any(!is.finite(w)))
       stop(sprintf(paste0("Step %d (%s) produced %d non-finite weight(s) (Inf/NaN), which ",
@@ -64,24 +88,38 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
     is_calib  <- inherits(steps[[i]], c("step_calibrate", "step_model_calibration"))
     cell_step <- inherits(steps[[i]], c("step_nonresponse", "step_unknown_eligibility",
                                         "step_calibrate"))
-    alerts <- .wf_alerts(w_before, w, res$diagnostics, is_calib, cell_step,
-                         min_cell_n = min_cell_n, max_factor = max_factor,
-                         step_class = step_cls)
+    # Alerts derived from the weights/diagnostics of this step. These are emitted
+    # as R warnings only when `warn = TRUE` (so they do not flood replicate fits).
+    struct_alerts <- .wf_alerts(w_before, w, res$diagnostics, is_calib, cell_step,
+                                min_cell_n = min_cell_n, max_factor = max_factor,
+                                step_class = step_cls)
     ca <- .crossfit_alert(steps[[i]])
-    if (!is.null(ca)) alerts <- c(alerts, ca)
-    if (length(alerts)) {
-      steps[[i]]$alerts <- alerts
-      tagged <- sprintf("[%s] %s", step_cls, alerts)
-      all_alerts <- c(all_alerts, tagged)
-      if (isTRUE(warn)) for (a in tagged) warning(a, call. = FALSE)
+    if (!is.null(ca)) struct_alerts <- c(struct_alerts, ca)
+    # All incidents for this step: derived alerts plus any warning the step raised.
+    step_alerts <- c(struct_alerts, step_warnings)
+    if (length(step_alerts)) {
+      steps[[i]]$alerts <- step_alerts
+      all_alerts <- c(all_alerts, sprintf("[%s] %s", step_cls, step_alerts))
+    } else {
+      steps[[i]]$alerts <- NULL   # clear any alert from a previous prep() of this step
     }
+    # Re-raise only the derived alerts; the captured warnings already propagated.
+    if (isTRUE(warn) && length(struct_alerts))
+      for (a in sprintf("[%s] %s", step_cls, struct_alerts)) warning(a, call. = FALSE)
     history[[paste0("stage_", i, "_", step_cls)]] <- w
   }
 
+  attr(data, "weightflow_base_w") <- NULL   # internal helper; do not leak into $data / collectors
+  # NP-06: a non-probability spec with base_weights = NULL got a synthetic all-ones
+  # base column (".wf_base1"). Drop it so it does not leak into $data or the
+  # collect_weights() output. A user-supplied base column is never dropped.
+  if (isTRUE(spec$nonprob) && grepl("^\\.wf_base1", spec$base_weights))
+    data[[spec$base_weights]] <- NULL
   structure(
     list(
       data         = data,
       base_weights = spec$base_weights,
+      nonprob      = spec$nonprob %||% FALSE,
       steps        = steps,
       history      = history,
       final_weight = w,
@@ -90,6 +128,37 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
     class = c("prepped_weighting_spec", "weighting_spec")
   )
 }
+
+#' Quality alerts recorded while preparing a recipe
+#'
+#' `weighting_alerts()` returns the character vector of quality incidents
+#' recorded by [prep()], each tagged with the step that produced it.
+#' `has_alerts()` is a convenience predicate. Every incident is captured here,
+#' including warnings a step raises internally (for example a calibration that
+#' could not meet its constraints), so this is the reliable channel for
+#' programmatic quality control even when warnings were suppressed.
+#'
+#' @param object a prepped_weighting_spec, as returned by [prep()].
+#' @return `weighting_alerts()`: a character vector (empty if the recipe ran
+#'   clean). `has_alerts()`: a single logical.
+#' @examples
+#' fit <- weighting_spec(sample_survey, base_weights = pw) |>
+#'   step_trim(max_ratio = 3) |>
+#'   prep()
+#' weighting_alerts(fit)
+#' has_alerts(fit)
+#' @export
+#' @family cascade audit
+weighting_alerts <- function(object) {
+  if (!inherits(object, "prepped_weighting_spec"))
+    stop("`object` must be a prepped_weighting_spec (the result of prep()).",
+         call. = FALSE)
+  object$alerts %||% character(0)
+}
+
+#' @rdname weighting_alerts
+#' @export
+has_alerts <- function(object) length(weighting_alerts(object)) > 0L
 
 # Quality alert: a flexible learner (tree / forest / boost) used WITHOUT
 # cross-fitting. Same-sample predictions keep each unit in the training set of
@@ -205,6 +274,18 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
              "or trim with step_trim_weights()."),
       pm, 1 / pm))
 
+  # NP-01 mirror: for a pseudo-weight (participation odds (1 - p)/p) a participation
+  # propensity near 1 sends the pseudo-weight toward 0, so the unit all but drops out
+  # of the sample without any tiny-propensity warning. Flag the near-1 extreme.
+  px <- attr(diag, "p_max")
+  if (!is.null(px) && is.finite(px) && px > 0.99)
+    msgs <- c(msgs, sprintf(
+      paste0("Near-certain participation (max p = %.4f) drives the pseudo-weight (1 - p)/p ",
+             "toward 0, so those units all but leave the sample. This usually means poor ",
+             "overlap between the sample and the reference (a covariate cell the reference ",
+             "barely reaches); review the common support or simplify the propensity model."),
+      px))
+
   # Propensity classes collapsed: the fitted propensities were ~constant, so the
   # requested num_classes quantile cut-points could not be formed and every unit
   # went to a single adjustment class. Surface it (the correction did nothing).
@@ -239,6 +320,28 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
                "response probability <= 0 or undefined). The nonresponse-calibration ",
                "auxiliaries are ill-behaved; use a bounded distance (logit) or a ",
                "different auxiliary vector."), sum(gg <= 0)))
+  }
+
+  # C2: two-phase subsample. The recipe-aware bootstrap resamples the phase-2
+  # variance component (V2) at the phase-2 sampling-unit level, so few such units
+  # give V2 few degrees of freedom and an unstable phase-2 SE; and a tiny phase-2
+  # selection probability expands the subsampled weights sharply, inflating V2.
+  if (identical(step_class, "step_subsample") && !is.null(diag) && is.data.frame(diag)) {
+    npsu <- if ("n_psu2"   %in% names(diag)) suppressWarnings(as.numeric(diag$n_psu2[1]))   else NA_real_
+    pmin <- if ("min_prob" %in% names(diag)) suppressWarnings(as.numeric(diag$min_prob[1])) else NA_real_
+    if (is.finite(npsu) && npsu < 30)
+      msgs <- c(msgs, sprintf(
+        paste0("Only %d phase-2 sampling unit(s) were subsampled. The two-phase bootstrap ",
+               "resamples the phase-2 variance component (V2) at this level, so few units ",
+               "give V2 few degrees of freedom and an unstable phase-2 standard error; ",
+               "inspect the split with two_phase_variance() and read the phase-2 SE with care."),
+        as.integer(npsu)))
+    if (is.finite(pmin) && pmin > 0 && pmin < 0.02)
+      msgs <- c(msgs, sprintf(
+        paste0("A very small phase-2 selection probability (min pi2 = %.4f) expands the ",
+               "subsampled weights by up to %.0fx, which inflates the phase-2 variance ",
+               "component (V2). Check the phase-2 design or trim the expanded weights."),
+        pmin, 1 / pmin))
   }
 
   # Ill-conditioned linear/GREG calibration: near-collinear auxiliaries make the
@@ -367,6 +470,7 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
 #'   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
 #'   prep()
 #' head(collect_weights(fitted))
+#' @family cascade audit
 collect_weights <- function(object, drop_zero = TRUE,
                             keep_intermediate = FALSE, weight_name = ".weight") {
   if (!inherits(object, "prepped_weighting_spec"))

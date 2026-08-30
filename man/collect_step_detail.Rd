@@ -9,8 +9,9 @@ collect_step_detail(object, step = NULL)
 \arguments{
 \item{object}{a prepped \code{weighting_spec} (the output of \code{\link[=prep]{prep()}}).}
 
-\item{step}{optional integer, which step to inspect (1 for the first piped
-step). If \code{NULL} (default): a single step exposing native detail is used; if
+\item{step}{optional: which step to inspect, as an integer position (1 for the
+first piped step) or a step id string (e.g. "calibrate_1"; see the recipe
+print-out). If \code{NULL} (default): a single step exposing native detail is used; if
 several do, or if none do and the recipe has more than one step, an error
 lists the steps so you can choose.}
 }
@@ -45,4 +46,13 @@ head(d[!is.na(d$.factor), c(".weight_in", ".factor", ".propensity")])
 }
 \seealso{
 \code{\link[=collect_weights]{collect_weights()}}, \code{\link[=collect_propensities]{collect_propensities()}}, \code{\link[=weight_factors]{weight_factors()}}
+
+Other cascade audit:
+\code{\link[=as_sae_input]{as_sae_input()}},
+\code{\link[=collect_propensities]{collect_propensities()}},
+\code{\link[=collect_weights]{collect_weights()}},
+\code{\link[=domain_summary]{domain_summary()}},
+\code{\link[=weight_factors]{weight_factors()}},
+\code{\link[=weighting_alerts]{weighting_alerts()}}
 }
+\concept{cascade audit}
