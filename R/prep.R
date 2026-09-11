@@ -56,6 +56,17 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
       !(spec$base_weights %in% names(data)))
     data[[spec$base_weights]] <- 1
   w    <- data[[spec$base_weights]]
+  # Validate the base weights here, not only in weighting_spec(): read_recipe() builds the
+  # spec with structure() and bypasses the constructor, so a character base column (from a
+  # CSV / SPSS import) would otherwise flow through as-is, make every weight non-numeric, and
+  # collect_weights() would return 0 rows -- a silent total loss. (PREP-02)
+  if (is.null(w))
+    stop(sprintf("Base-weight column '%s' is not in the data.", spec$base_weights),
+         call. = FALSE)
+  if (!is.numeric(w))
+    stop(sprintf(paste0("Base-weight column '%s' must be numeric, not <%s>. Convert it with ",
+                        "as.numeric() (e.g. after read.csv(stringsAsFactors = TRUE) or an ",
+                        "SPSS/Stata import)."), spec$base_weights, class(w)[1]), call. = FALSE)
   attr(data, "weightflow_base_w") <- w     # available to step_trim(reference = "base")
 
   history <- list(base = w)             # weight at each stage
@@ -83,9 +94,16 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
                           "cell total, or an extreme calibration factor -- check that step's ",
                           "inputs."),
                    i, class(steps[[i]])[1], sum(!is.finite(w))), call. = FALSE)
+    # A step that leaves 0 active units (every weight 0) makes the rest of the cascade a
+    # no-op and collect_weights() empty; without an alert this is silent. Flag the step that
+    # emptied the sample (once, on the transition from some-active to none). (PREP-01)
+    if (sum(.wf_active(w)) == 0L && sum(.wf_active(w_before)) > 0L)
+      step_warnings <- c(step_warnings, paste0(
+        "this step left 0 active units (every weight is 0); the rest of the recipe is a ",
+        "no-op and the weighted result is empty -- check the step's condition or totals."))
     steps[[i]]$diagnostics <- res$diagnostics
     step_cls  <- class(steps[[i]])[1]
-    is_calib  <- inherits(steps[[i]], c("step_calibrate", "step_model_calibration"))
+    is_calib  <- inherits(steps[[i]], c("step_calibrate", "step_model_calibration", "step_cre"))
     cell_step <- inherits(steps[[i]], c("step_nonresponse", "step_unknown_eligibility",
                                         "step_calibrate"))
     # Alerts derived from the weights/diagnostics of this step. These are emitted
@@ -115,6 +133,10 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
   # collect_weights() output. A user-supplied base column is never dropped.
   if (isTRUE(spec$nonprob) && grepl("^\\.wf_base1", spec$base_weights))
     data[[spec$base_weights]] <- NULL
+  # A step_model_calibration() not followed by step_trim_calibrated() leaves its
+  # internal prediction-columns attribute on the weights; strip it so it does not
+  # leak into the user-facing final weight.
+  attr(w, "wf_modelcal") <- NULL
   structure(
     list(
       data         = data,
@@ -265,14 +287,44 @@ has_alerts <- function(object) length(weighting_alerts(object)) > 0L
         zeroed))
   }
 
+  # NR-SUM: 1/phi-hat weighting is approximately design-unbiased for the ELIGIBLE total, so the
+  # nonresponse/attrition adjustment must very nearly preserve the sum of the incoming active
+  # weights. CEPAL's household-survey manual prescribes this check explicitly, twice (ch. XVI,
+  # after the base weights and again after the nonresponse adjustment): "es indispensable
+  # corroborar que la suma de los pesos basicos sea cercana al tamano de la poblacion que se
+  # quiere representar".
+  #
+  # The 5% threshold is measured, not guessed: over 720 runs with a CORRECT propensity model
+  # (n from 500 to 5000, response rates 0.6 to 0.95, design weights ~140), the ratio had
+  # sd between 0.0001 and 0.0056 and never left [0.977, 1.022]. So 5% never fires on a healthy
+  # fit, while a model that collapsed to phi-hat == 1 -- the NR-PROP-01 failure, where the
+  # adjustment silently became a no-op and the total fell by 8% -- fires immediately.
+  # `weighting_class` preserves the sum exactly by construction, so this only ever bites the
+  # modelled paths, which is where it is needed.
+  if (identical(step_class, "step_nonresponse") || identical(step_class, "step_attrition")) {
+    sb <- sum(w_before[.wf_active(w_before)], na.rm = TRUE)
+    sa <- sum(w_after[.wf_active(w_after)], na.rm = TRUE)
+    if (is.finite(sb) && sb > 0 && is.finite(sa) && abs(sa / sb - 1) > 0.05)
+      msgs <- c(msgs, sprintf(
+        paste0("The nonresponse adjustment changed the total of the active weights by %+.1f%% ",
+               "(%s -> %s). Inverse-propensity weighting is approximately unbiased for the ",
+               "eligible total, so it should be nearly preserved; a departure this large means ",
+               "the adjustment is not compensating the nonresponse. Check the fitted ",
+               "propensities (a model that collapses to a constant makes 1/phi a no-op), or ",
+               "whether ineligible units were left in the active set."),
+        100 * (sa / sb - 1),
+        format(round(sb), big.mark = ",", scientific = FALSE),
+        format(round(sa), big.mark = ",", scientific = FALSE)))
+  }
+
   # Very small response propensities blow up the 1/p weights; flag it.
   pm <- attr(diag, "p_min")
   if (!is.null(pm) && is.finite(pm) && pm < 0.01)
     msgs <- c(msgs, sprintf(
       paste0("Very small response propensities (min p = %.4f among respondents) ",
-             "produce extreme 1/p weights (up to %.0fx). Check the propensity model, ",
+             "produce extreme 1/p weights (up to %sx). Check the propensity model, ",
              "or trim with step_trim_weights()."),
-      pm, 1 / pm))
+      pm, format(round(1 / pm), big.mark = ",", scientific = FALSE)))
 
   # NP-01 mirror: for a pseudo-weight (participation odds (1 - p)/p) a participation
   # propensity near 1 sends the pseudo-weight toward 0, so the unit all but drops out
@@ -339,9 +391,9 @@ has_alerts <- function(object) length(weighting_alerts(object)) > 0L
     if (is.finite(pmin) && pmin > 0 && pmin < 0.02)
       msgs <- c(msgs, sprintf(
         paste0("A very small phase-2 selection probability (min pi2 = %.4f) expands the ",
-               "subsampled weights by up to %.0fx, which inflates the phase-2 variance ",
+               "subsampled weights by up to %sx, which inflates the phase-2 variance ",
                "component (V2). Check the phase-2 design or trim the expanded weights."),
-        pmin, 1 / pmin))
+        pmin, format(round(1 / pmin), big.mark = ",", scientific = FALSE)))
   }
 
   # Ill-conditioned linear/GREG calibration: near-collinear auxiliaries make the

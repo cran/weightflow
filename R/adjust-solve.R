@@ -110,6 +110,32 @@
 }
 
 # Build a grouping factor from the `by` columns -----------------------------
+# CELL-01. The adjustment cell is the `by` values pasted with " | ", and that string is
+# also its identity: units are grouped by it, and it is what every diagnostics table and
+# report shows. Pasting the raw values is NOT injective. Two different combinations whose
+# values contain the separator -- ("a | b", "c") and ("a", "b | c") -- produce the same
+# string and are merged into ONE cell. The damage is double: the adjustment factor is
+# computed over the union, so both halves come out wrong (measured: weights x2), and the
+# "adjustment cell with no respondents" alert never fires, because the empty half is
+# absorbed by the full one and there is nothing left to be empty. The diagnostics then
+# display a cell ("a | b | c") that does not exist in the data. A genuine value equal to
+# the "(missing)" sentinel collides with NA the same way.
+#
+# Escaping inside the values makes the paste injective while keeping the label readable:
+# an unescaped "|" can then only be a separator. Values that contain no "|" and no
+# backslash -- every ordinary survey variable -- are untouched, so no existing cell label
+# changes.
+.wf_cell_escape <- function(x) {
+  hit <- !is.na(x) & grepl("[\\|]", x)
+  if (any(hit)) {
+    x[hit] <- gsub("\\", "\\\\", x[hit], fixed = TRUE)   # the escape character first
+    x[hit] <- gsub("|",  "\\|",  x[hit], fixed = TRUE)
+  }
+  sen <- !is.na(x) & x == "(missing)"                    # a real value, not an NA
+  if (any(sen)) x[sen] <- "\\(missing)"
+  x
+}
+
 .make_cells <- function(data, by, n, active = NULL) {
   if (is.null(by)) return(factor(rep("(all)", n)))
   if (!length(by))
@@ -121,7 +147,9 @@
     if (!v %in% names(data)) stop(sprintf("Cell variable '%s' not found.", v))
     x  <- as.character(data[[v]])
     na <- is.na(x)
-    if (any(na)) { na_unit <<- na_unit | na; x[na] <- "(missing)" }  # explicit, not the ambiguous "NA"
+    if (any(na)) na_unit <<- na_unit | na
+    x <- .wf_cell_escape(x)                   # CELL-01, see below
+    x[na] <- "(missing)"                      # explicit, not the ambiguous "NA"
     x
   })
   # Only warn about NA cells among the units this step actually acts on. Units

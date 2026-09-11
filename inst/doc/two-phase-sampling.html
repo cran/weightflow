@@ -514,6 +514,21 @@ two-phase recipe (use the bootstrap), and
 <code>bootstrap_weights()</code> raises a clear error rather than
 silently undercovering when first-phase
 <code>strata</code>/<code>psu</code> are supplied.</p>
+<p><strong>Means and ratios vs. totals.</strong> The per-PSU Gamma
+factor is a Hansen-Hurwitz (uncentred) multiplier: its variance
+contribution enters through the sum of squares <span class="math inline">\(\sum d_k (w_k y_k)^2\)</span>, not the
+stratum-centred Rao-Wu form <span class="math inline">\(\sum
+\frac{n_h}{n_h-1}\sum (z-\bar z)^2\)</span>. For a <strong>mean or
+ratio</strong> the factor cancels between numerator and denominator, so
+the estimate self-centres and the variance is right. For a
+<strong>total</strong> it does not cancel: the phase-1 component is then
+<em>materially</em> conservative and can overestimate the variance
+substantially (not merely “slightly”). <code>boot_total()</code> and
+<code>two_phase_variance(estimator = &quot;total&quot;)</code> therefore warn, and
+their SE should be read as an upper bound; use the
+<code>&quot;mean&quot;</code>/ratio path, or an exact stratified
+without-replacement second phase (a planned extension), when a tight
+total variance is required.</p>
 </div>
 <div id="references" class="section level2">
 <h2>References</h2>

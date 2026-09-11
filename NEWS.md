@@ -1,367 +1,250 @@
+# weightflow 1.3.0
+
+## New features
+
+* **Rotating and pure panels.** `panel_design()` reads the unit x wave structure and
+  the rotation calendar -- and, given a `cluster`, the overlap at the cluster level
+  too, which is the one the rotation calendar describes (the unit-level figure is
+  that overlap net of within-household churn); `panel_merge()` builds the
+  longitudinal file; `panel_pr()` and `step_panel_overlap()` apply the
+  panel-selection probability; `step_attrition()` is the panel-facing nonresponse
+  adjustment and takes the full argument list of `step_nonresponse()`, `crossfit`
+  included; and `step_longitudinal()` / `step_cross_sectional()` declare which weight
+  a recipe is building.
+
+* **Net change with a coordinated variance.** `wave_bootstrap()` and
+  `wave_jackknife()` resample PSUs *coordinately* across waves, so the sample
+  overlap shows up as covariance instead of being ignored. `change_estimate()`
+  (with `change_mean()` / `change_total()`, absolute or relative, optionally by
+  domain), `level_estimate()` and `panel_estimate(contrast = )` read the estimates
+  off those replicates. Both engines take `lonely_psu` as `bootstrap_weights()` does,
+  because a stratum with a single PSU contributes no variance to a change either;
+  the collapse map is built over all the waves at once so the replicate pairing
+  survives it.
+
+* **Chained production: `wave_step()`, `wave_carry()`, `wave_contrast()`.** One
+  period at a time, as an office actually publishes: each run leaves a compact
+  *carry* that the next one needs, and `wave_contrast()` estimates any linear
+  combination over a chain (a rolling quarter, an annual average) from the saved
+  carries alone.
+
+* **Composite (regression composite) estimation: `step_cre()`.** The MR1/MR2
+  estimator of the Canadian LFS and Uruguay's ECH, including the equal-representation
+  constraints across rotation groups, with `Zhat` re-estimated inside every
+  replicate. The step reports the quality of the wave-to-wave link it depends on --
+  the overlap rate, the births, and how many non-birth units failed to link -- and
+  warns when that failure rate gets high, because a broken linkage key attenuates the
+  estimated change rather than announcing itself.
+
+* **Gross flows.** `transition_matrix()`, `boot_transition()` and `boot_flows()`
+  give the weighted flow between states across waves, as conditional or joint
+  distributions and as population totals with standard errors and net flows.
+
+* **A declarative estimation grammar.** `step_domain()`, `step_filter()`,
+  `step_estimate()` and `collect_estimates()` run over a saved replicate object, so
+  the expensive replicate build happens once and many estimates are read off it.
+  Units whose domain value is missing are reported rather than quietly dropped, so
+  it is visible when the cells will not add up to the overall figure. Every verb of
+  the statistic DSL validates its arguments against the wave data, because a
+  replicate object will put a standard error and a confidence interval on whatever
+  number it is handed: an estimand must give one numeric or logical value per unit
+  (so `prop()` takes a condition, `prop(status == "unemployed")`, and refuses a
+  factor rather than averaging its integer codes), `p` in `quantile(var, p)` must be
+  a probability in `[0, 1]` (`0.5`, not `50`), `level` must be a proportion, and
+  `ratio(num, den)` is taken over the domain where both are observed -- matching
+  `survey::svyratio(na.rm = TRUE)` exactly -- rather than dropping the missing rows
+  of each sum independently. A domain column may not be named after one of the
+  result table's own columns.
+
+* **`report_panel()`**, a self-contained HTML quality report for a panel run, and
+  new panel alerts (`PN-01`, `PN-02`, `PN-06`, `PN-07`, `PN-08`) plus an alert when a
+  nonresponse adjustment stops preserving the eligible total.
+
+* **Exact multinomial PSU resampling** is the default in the panel engines
+  (`resample = "multinom"`): the per-stratum resample counts sum to `m_h`, which
+  removes an ~8-10% inflation of the composite change SE seen in simulation. Within a
+  stratum the PSUs are ordered by how many waves they appear in, so the units that
+  carry the overlap get the exactly-coordinated draws and the answer does not depend
+  on which PSU ids happen to rotate out.
+
+* Smaller additions: `bounds` and `calfun` for `step_model_calibration()`,
+  `step_trim_calibrated()` after a model-calibration step, and `refit_steps` to
+  choose which steps are re-run per replicate.
+
+* Four new vignettes: *Rotating panels*, *Pure panels*, *Coordinated replication*
+  and *Composite estimation*. The change variance is now also validated against an
+  analytic estimator from a different family (Berger and Priam 2016, via
+  `ReGenesees::svyDelta()`), with the reference values frozen in the test suite.
+
+## Bug fixes
+
+These are fixes against **1.2.0 as published**. The panel layer is new in this
+release, so nothing about it appears here: what it does and what it checks is
+described under New features.
+
+* Response-propensity models could diverge under production design weights: a
+  binomial GLM reads the prior weights as the number of trials, so large design
+  weights started the fit at the separation boundary and the fitted propensities
+  collapsed. Model weights are now normalized to mean 1 wherever a weighted binomial
+  model is fitted, which leaves the estimates invariant.
+
+* **Recipe files are safe to exchange.** `read_recipe()` accepts only a whitelist of
+  data-manipulation calls in the conditions and formulas a recipe stores, unless
+  `allow_code = TRUE`; before, a hand-edited condition still ran on the first
+  `prep()`. And `write_recipe()` no longer serializes a `population =` data frame
+  value by value: it is stored as a descriptor and asked back through `references =`,
+  as `reference_sample()` already was.
+
+* Adjustment cells are keyed unambiguously. A `by` value containing the `" | "`
+  separator, or equal to the `"(missing)"` sentinel, used to collapse two different
+  cells into one -- with the wrong adjustment factor for both, and the "cell with no
+  respondents" alert suppressed because the empty half was absorbed by the full one.
+
+* Two publication gates that failed open are closed: `disclosure_risk()` silently
+  skipped cells with a missing value or a non-positive median weight, leaving those
+  units out of the screen for weight dominance, and `as_sae_input()` rated both a
+  missing-domain area and a zero-variance domain as publishable.
+
+* `step_round("preserve_total")` breaks ties in the fractional part at random rather
+  than by row order, which was moving mass systematically towards whatever the file
+  was sorted by while reporting the grand total as preserved. Call `set.seed()`
+  before `prep()` for a reproducible result, as `method = "balanced"` already
+  required.
+
+* The model-assisted and propensity steps are steadier under cross-fitting: whether a
+  `y_model()` is a regression or a classification is decided once over the whole
+  sample instead of inside each fold (and an explicit `family` is respected),
+  propensities at the 0/1 boundary warn instead of being clamped in silence, and a
+  fold whose training set has only respondents says so rather than failing inside the
+  model engine.
+
+* The HTML reports describe the active weights, negatives included, in the
+  weight-distribution card and the matching Status check; a column name containing a
+  space no longer aborts the whole report; and the trimming note names the direction
+  the weight total moved when the bounds could not be met.
+
+* `boot_total()` warns that the two-phase total variance is conservative, which it
+  was silently before, and the wave engines reject `NA` or blank in `strata` / `psu`,
+  as `bootstrap_weights()` has since 1.2.0 -- those rows paste into one design key
+  and were resampled as a single pseudo-PSU, understating the variance.
+
+* Stricter validation and robustness fixes for degenerate and edge-case inputs across
+  the cascade, trimming and the auxiliary outputs, each with a regression test.
+
 # weightflow 1.2.0
 
 ## New features
 
-* **Two-phase (double) sampling.** `step_subsample()` records a second phase of sampling (a subsample drawn for a costlier follow-up), and `bootstrap_weights()` then returns the two-phase variance `V = V1 + V2` -- the phase-1 sampling variance plus the phase-2 conditional variance a single-phase bootstrap would miss. Covers a Poisson second phase nested in the first; calibrating the subsample to first-phase totals (the two-phase regression estimator, Fuller 1998) is done by composing with a `reference_sample()`. **`two_phase_variance()`** splits the estimate's variance into its phase-1 and phase-2 components (`V1`, `V2`, and the share `V2/V`), turning the coupling into an operational read of whether a denser subsample would pay off. The HTML report now explains the subsample step (in English and Spanish) and its `V = V1 + V2` logic. Validated against Monte Carlo; see `vignette("two-phase-sampling")`.
-* **Non-probability samples.** `weighting_spec(base_weights = NULL, nonprob = TRUE)` starts an opt-in / volunteer / river sample, and `step_pseudoweight()` estimates each unit's participation propensity against a `reference_sample()` and assigns the inverse-propensity pseudo-weight (Elliott and Valliant 2017). Can be combined with calibration to the reference for a doubly robust estimate.
-* **`step_nr_sensitivity()` / `nr_sensitivity()`** add a sensitivity analysis for nonignorable nonresponse or selection (proxy pattern-mixture model, Andridge and Little 2011), reporting an *ignorance interval* over a single sensitivity parameter; the report gains a matching block.
-* **`data_defect()`** brings the data-defect view of Meng (2018) to non-probability samples: the effective sample size across a grid of plausible outcome-participation correlations (an ignorance range, not a single number).
-* **`write_recipe()` / `read_recipe()`** serialize the recipe (the method, not the data) to a human-readable, versionable YAML file and read it back into an inspectable manifest or an executable `weighting_spec`. Needs the `yaml` package.
-* **`domain_summary(min_n_eff = )`** turns the per-domain reliability read into an explicit publication gate (a `publishable` column and a warning for domains below the threshold, pointing to `as_sae_input()`).
-* **Confidentiality tools for public-use files.** `collect_replicate_weights(scramble = TRUE)` hides the sampling design behind the exported replicate weights (variance unchanged), and `disclosure_risk()` flags weight outliers within a publication cell.
-* **`as_sae_input()`** exports, per domain, the direct estimate, its recipe-aware design SE, the effective sample size and a CV rating, in the shape a Fay-Herriot model consumes -- a bridge to the SAE packages (`emdi`, `sae`, `hbsae`) without fitting any model.
-* **Calibrate to a reference survey.** `reference_sample()` lets `step_calibrate()` and `step_model_calibration()` calibrate to a weighted reference survey instead of a full population frame; passing its replicate weights propagates the reference's sampling variance through the bootstrap (Opsomer and Erciulescu 2021), and the report states when control totals are estimated rather than census figures.
-* **`weighting_alerts()` / `has_alerts()`** read the quality incidents recorded by `prep()`; every incident now lands in `$alerts`, a single reliable channel for programmatic quality control even under suppressed warnings.
-* **`bootstrap_weights(fpc = )`** adds a finite-population correction (column, scalar, or per-stratum vector) folded into the Rao-Wu rescaling (Rao, Wu and Yue 1992; Beaumont and Patak 2012); matters for the high sampling fractions common in LatAm household surveys. `fpc = 0` / `NULL` is the with-replacement bootstrap.
-* **`t` and percentile confidence intervals** for `bootstrap_estimate()` (and `t` for `jackknife_estimate()`), carrying the design degrees of freedom so the interval is not anticonservative with few PSUs. Default stays `"normal"`.
-* **Stable step ids.** Every `step_*()` gains an `id` (with a unique derived default), shown in the recipe print-out and usable to select a step in `collect_step_detail()`.
+* **Two-phase (double) sampling.** `step_subsample()` records a second phase and the
+  bootstrap returns the variance split into its two components (`V = V1 + V2`).
+* **Non-probability samples.** `step_pseudoweight()` (pseudo-weighting, mass
+  imputation and doubly robust estimators), `step_nr_sensitivity()` for
+  nonignorable nonresponse, and `data_defect()` for the Meng (2018) view.
+* **Calibrate to a reference survey** with `reference_sample()`, propagating the
+  reference's own sampling error.
+* **Recipes as files.** `write_recipe()` / `read_recipe()` serialize the method (not
+  the data) to a versionable YAML manifest.
+* **Confidentiality and hand-off.** `collect_replicate_weights(scramble = TRUE)`,
+  `disclosure_risk()`, and `as_sae_input()` for small-area models.
+* **Quality control.** `weighting_alerts()` / `has_alerts()` as a single programmatic
+  channel, `domain_summary(min_n_eff = )` as an explicit publication gate, and
+  stable `id`s on every step.
+* **Finite-population correction** (`fpc`) and `t` / percentile confidence intervals
+  in the replicate estimators.
 
 ## Bug fixes
 
-* Nonresponse, eligibility and weight-trimming steps now build their `by`-cells over the units still active, so cases dropped earlier in the cascade no longer raise spurious `(missing)`-cell warnings; the response-rate card likewise ignores out-of-scope cases with a missing disposition rather than counting them as nonresponse.
-* Household-level nonresponse modelling now reports the same tiny-propensity and calibration diagnostics as the person-level path.
-* **Behaviour change:** the mean estimators and replicate-weight exports keep active negative weights (a valid GREG output) rather than dropping them, matching the totals estimators and the survey exports; estimates and standard errors may shift accordingly.
-* Stricter, earlier argument validation across the step constructors and estimators, with clearer messages (out-of-range or non-numeric arguments, duplicated calibration-total names, negative model weights, blank stratum/PSU ids) instead of later cryptic errors.
-* Assorted robustness fixes for malformed or edge-case inputs (missing calibration auxiliaries, empty or degenerate cells, open trimming bounds), each covered by a regression test.
-* Report accuracy and honesty fixes: no vacuous checklist claims, clearer per-step descriptions, and formatting/translation fixes.
-* Documentation: an argument-correspondence table (`?weightflow-concepts`), a quality-alerts catalogue (`?weightflow-alerts`), and `@family` cross-links.
+* Cells for `by`-based steps are now built over the units still active, so units
+  dropped earlier no longer raise spurious `(missing)` cells.
+* **Behaviour change:** the mean estimators and replicate-weight exports keep active
+  negative weights (a valid GREG output), matching the totals estimators and
+  `survey`.
+* Stricter, earlier argument validation across the step constructors and
+  estimators, plus robustness fixes for malformed and edge-case inputs, each with a
+  regression test.
+* Documentation: `?weightflow-concepts` (argument correspondence with `survey`) and
+  `?weightflow-alerts` (the alert catalogue).
 
 # weightflow 1.1.0
 
 ## New features
 
-* **Diagnostics report suite.** `report_weighting()` gains a per-step card reading the bias-variance trade-off of each adjustment, with quality alerts for trimming, calibration, machine-learning propensity models and nonresponse-by-calibration.
-* **Honest variance for machine-learning adjustments.** A flexible learner (tree / forest / boost) run without `crossfit` now raises an alert, since same-sample predictions can understate the variance even under recipe-aware replication; the `ranger` seed is fixed so the forest's noise no longer enters the replicates.
-* **`collect_replicate_weights()` also exports delete-a-PSU jackknife objects**, with the `type` / `scale` / `rscales` needed by `survey` / `srvyr` (first argument renamed `boot` -> `object`).
-* **Iterative recipe refinement.** Adding a step to a prepped recipe clears the results with a message and re-runs the cascade on the next `prep()`, so stale weights cannot be read by accident.
-* **Per-subgroup trimming.** `step_trim_calibrated()` gains a `by` argument and per-group `lower` / `upper` bounds (requested by ECLAC).
-* **`collect_propensities()`** recovers the per-unit response propensities fitted by a `step_nonresponse(method = "propensity")` step from a prepped recipe, so their distribution can be inspected before the adjusted weights are trusted; it returns the same information whether the adjustment was made at the unit level or, through `cluster`, at the household level (the household propensity is broadcast to its members). It also returns `.factor` (the multiplier actually applied to each unit) and, with propensity classes, `.class`; note that `1/.propensity` reconstructs the applied factor only when `num_classes = NULL`. Requested by ECLAC.
-* **`collect_step_detail()`** is a generic companion to `collect_weights()`: for any step it returns the weight each unit received (`.weight_in`) and the multiplier the step applied (`.factor`, read from the stored stage weights so `.weight_in * .factor` equals the outgoing weight by construction), plus that step's native per-unit quantities when it exposes them (for a propensity step, `.propensity` and `.class`).
-* **`domain_summary()`** reports, for a study domain (e.g. a department / DAM), how the weights move within each domain at every stage of the cascade -- active units, sum of weights, mean weight and Kish design effect -- so weight movement can be reviewed step by step per domain for quality control (requested by ECLAC). Domains follow their factor / numeric order, a missing domain value is shown as an explicit `(missing)` domain, and `by` accepts several columns (crossed).
+* **Diagnostics report suite.** `report_weighting()` gains a per-step card reading
+  the bias-variance trade-off of each adjustment, with quality alerts.
+* **Honest variance for machine-learning adjustments**: a flexible learner run
+  without `crossfit` now raises an alert.
+* **Inspection accessors**: `collect_propensities()`, `collect_step_detail()` and
+  `domain_summary()`.
+* **Per-subgroup trimming** (`by` in `step_trim_calibrated()`), and jackknife export
+  through `collect_replicate_weights()`.
+* Adding a step to a prepped recipe now clears the results, so stale weights cannot
+  be read by accident.
 
 ## Bug fixes and documentation
 
-* Robustness and correctness fixes for uncommon edge cases -- malformed or degenerate inputs, replicate-variance accounting, and the HTML report -- each covered by a regression test.
-* Documentation overhaul: help pages reviewed and rewritten, estimator formulas added to the details, and a new `?weightflow-concepts` page.
+* Robustness and correctness fixes for edge cases in the cascade, the replicate
+  variance and the HTML report, each covered by a regression test.
+* Help pages reviewed and rewritten, with estimator formulas in the details.
 
 # weightflow 1.0.0
 
 ## New features
 
-* **Tidy control totals that disagree on N now reconcile instead of failing.**
-  When the tidy `totals` given to `step_calibrate()` do not all sum to the same
-  population size (typical rounding of independently produced control totals),
-  the largest margin is kept as the reference N and the others are rescaled
-  proportionally, so their internal distribution is preserved and the
-  calibration always closes. This applies to both `method = "raking"` (which
-  previously could fail to converge) and `method = "linear"` / GREG (which
-  previously used the first margin silently). The adjustment is reported through
-  a message (informative, never fatal, so it is safe under
-  `options(warn = 2)`) and is carried into `report_weighting()`, where it appears
-  in the points-of-attention panel and the calibration step card listing every
-  rescaled margin and the common N, so control-total mismatches are surfaced for
-  review rather than hidden. This keeps the tidy interface usable without the
-  manual dropping of a category that a design matrix would otherwise require.
-
-* **Unweighted propensity models.** `step_nonresponse(method = "propensity")`
-  gains `weight_model` (default `TRUE`). With `FALSE` the response-propensity
-  model is fit unweighted, so the incoming weights enter only the 1/p (or class)
-  adjustment and not the model fit -- useful when the weights are unrelated to
-  response given the covariates (Little & Vartivarian 2003). Works at unit and
-  household (cluster) level and across all engines. On a suggestion by Andrés Gutiérrez (ECLAC - Statistics Division).
-
-* **Nonresponse by calibration (two-phase).** `step_nonresponse()` gains
-  `method = "calibration"`: instead of weighting classes or inverse propensities,
-  it adjusts for nonresponse by calibrating the respondents' weights to auxiliary
-  totals (Lundstrom & Sarndal 1999; Sarndal & Lundstrom 2005). With
-  `totals = NULL` (default) the targets are the R+NR design-weighted totals at that
-  stage, so the calibrated respondent estimates reproduce the pre-nonresponse
-  cascade estimates exactly (the two-phase / sample-level case, Estevao & Sarndal
-  2002); supply `totals` to calibrate to population totals instead. Continuous and
-  categorical auxiliaries, the distance `calfun` (linear/raking/logit), `bounds`
-  and `penalty` (ridge) all carry over from `step_calibrate()`. The sample-level
-  target is recomputed inside each bootstrap/jackknife replicate, so the two-phase
-  variance is captured by the recipe-aware machinery. With
-  `equal_within_cluster = TRUE` (and a `cluster`) the adjustment is integrative
-  (Lemaitre-Dufour): the responding members of a household share a single
-  calibration factor, so nonresponse calibration keeps the weights constant
-  within household, as in a household survey. `method = "weighting_class"`
-  remains the post-stratification (joint-cell) special case; the marginal
-  (IPF via `margins`) variant is planned for a later 0.3.0 increment.
-
-* **`step_trim_calibrated()`: trimmed (range-restricted) calibration.** Trims
-  already-calibrated weights into an absolute interval `[lower, upper]` while
-  **preserving the calibration totals**, unlike `step_trim_weights()` which caps
-  and redistributes (breaking the constraints). It is a bounded re-calibration
-  (the generalized exponential method of Folsom & Singh 2000): the targets to
-  preserve are the totals the incoming weights already
-  achieve, and the absolute-weight bound becomes a per-unit factor bound
-  `w_new / w in [lower/w, upper/w]`, solved with the range-restricted Euclidean
-  distance (`calfun = "linear"`, the default) or the multiplicative one
-  (`"raking"`). Weights inside the range stay put; out-of-range ones saturate at
-  their bound and the rest move minimally to restore every total. If the range
-  is infeasible, the unmet totals are relaxed and a warning is raised. It reuses
-  the bounded-calibration solver, now able to take per-unit bounds. With
-  `equal_within_cluster = TRUE` (and a `cluster`) the trimming is integrative:
-  one factor per household, so weights that were constant within household stay
-  constant (the household-level analogue of `survey`'s `aggregate.stage`
-  calibration).
-
-* **Lonely-PSU handling and parallelism in the replicate-variance functions.**
-  `bootstrap_weights()` and `jackknife_weights()` gain a `lonely_psu` argument:
-  `"certainty"` (default) keeps the previous behaviour (single-PSU strata are
-  self-representing, contribute no variance, and warn), while `"collapse"` merges
-  single-PSU strata into a pseudo-stratum so they are resampled and yield a
-  (conservative) variance instead of zero. Both functions also gain a `cores`
-  argument: with `cores > 1` the per-replicate re-preps run in parallel via
-  `parallel::mclapply` (forking; serial on Windows). The resampling is drawn up
-  front from the `seed`, so the parallel run is bit-identical to the serial one.
-
-* **`redistribute` argument for `step_trim_weights()`.** The trimmed mass can now
-  be shared among the untrimmed units either in proportion to their weights
-  (`"proportional"`, the default, keeps their relative sizes) or in equal amounts
-  (`"uniform"`, the same amount to each untrimmed unit, with already-trimmed cases
-  not reused). The `"uniform"` option reproduces `survey::trimWeights()` exactly,
-  for bit-for-bit agreement when a weighting pipeline is validated against
-  `survey`.
-
-* **`report_weighting()` is now a full methodological quality report (GSBPM 5.6
-  / ESS style).** With `narrative = TRUE` (default) the HTML report reads like an
-  official quality report: an auto-generated executive summary (the cascade in
-  prose plus the headline design effect, effective n and R-indicator) and a
-  natural-language paragraph on each step built from its own parameters and
-  diagnostics, in English or Spanish (new `lang`). A new `metadata` argument adds
-  a reference-metadata header card aligned to the ESS SIMS / ESMS concepts and
-  GSBPM sub-process 5.6 (operation, reference period, coverage, producer,
-  contact, sampling frame, the source and date of the control totals, version,
-  confidentiality). When the recipe has eligibility / nonresponse steps, a
-  "Fieldwork outcomes" card reconstructs every case's disposition and reports the
-  AAPOR response rate in three variants, from most to least conservative in how
-  unknown-eligibility cases are treated, RR1 <= RR3 (CASRO, e-adjusted) <= RR5,
-  weighted and unweighted (Valliant, Dever & Kreuter 2018, ch. 6). The executive
-  summary also aggregates a "Points of attention" panel (steps that did not
-  converge or raised an alert, each with a short recommendation), a truthful
-  status checklist (convergence, final design effect, extreme and replicate
-  weights, alerts) and a completion line; calibration steps get descriptive names
-  by their auxiliaries and a relative-deviation column on their target/achieved
-  tables. Set `narrative = FALSE` for the previous tables-only report.
-
-* **New analytical cards, charts and navigation in `report_weighting()`.** A
-  per-domain reliability card (new `domains` one-sided formula: active n, sum of
-  weights, CV, Kish design effect and effective n within each domain, one table
-  per term, `+` separate and `:` crossed). A per-step impact table (the change in
-  Kish deff and CV versus the previous stage, each step's share of the total
-  |deff change|, and whether it adds variance or recovers efficiency). A Kish
-  design-effect evolution chart across stages. A replication-design card (new
-  `replicates`, a `weightflow_boot` / `weightflow_jack` object: method,
-  replicates, strata, mean PSUs per stratum, lonely-PSU handling, seed, cores and
-  run time); `bootstrap_weights()` and `jackknife_weights()` now record this
-  metadata. Plus a navigation menu, conditional colouring of the design-effect
-  cells, a plain-language interpretation of the final design effect, collapsible
-  per-step details, and a restyle to the package identity. Still pure inline SVG,
-  no JavaScript and no new dependencies.
+* **Nonresponse by calibration** (`step_nonresponse(method = "calibration")`) and
+  unweighted propensity models (`weight_model = FALSE`).
+* **Trimmed calibration** (`step_trim_calibrated()`): trim calibrated weights into an
+  absolute interval while preserving the calibration totals.
+* **Tidy control totals that disagree on N now reconcile** instead of failing, with
+  a message naming the rescaling.
+* **Lonely-PSU handling and parallelism** in `bootstrap_weights()` and
+  `jackknife_weights()`, and a `redistribute` argument for `step_trim_weights()`.
+* **`report_weighting()` becomes a full methodological quality report** (GSBPM 5.6 /
+  ESS style), with a narrative mode, a per-domain reliability card and new charts.
 
 ## Bug fixes
 
-* **Cross-fitting no longer errors in a fresh session.** With a `crossfit_seed`,
-  `step_nonresponse()` and `step_model_calibration()` saved and restored the
-  global RNG state but assumed `.Random.seed` already existed, which fails in a
-  session that has not yet drawn a random number (e.g. a vignette build). The
-  state is now saved only when present and unset again otherwise.
-
-* **`step_trim_weights()` now trims negative weights.** It previously acted only
-  on positive weights (`w > 0`), so negative weights produced by unbounded linear
-  calibration were left untouched by a lower floor. It now trims every non-zero
-  weight, flooring negatives to `lower`, while still leaving dropped units (weight
-  exactly 0) alone. Recipes without negative weights are unaffected.
-
-
-* **Reproducible report scatter plots.** The weight before/after scatter in
-  `report_weighting()` subsampled points at random (without a seed) when a step
-  had more than 800 units, so the plotted cloud changed between renders even
-  though the weights were identical. It now uses a deterministic thinning
-  (`.thin_scatter()`): all points are drawn up to `cap = 3000`, and above that
-  the plot always keeps both tails on each axis (smallest/largest weights before
-  and after) and the largest departures from the y = x line, then systematically
-  thins the dense core. The scatter is now identical across runs and never drops
-  the outliers.
+* Cross-fitting no longer errors in a fresh session, `step_trim_weights()` now trims
+  negative weights, and the report's before/after scatter is reproducible.
 
 # weightflow 0.2.0
 
 ## New features
 
-* **Tidy population totals for `step_calibrate()`.** In addition to the classic
-  `margins`/`totals` inputs (which keep working unchanged), calibration targets
-  can now be given as tidy data frames, paired with the new `count` argument
-  that names the counts column:
-    - *Post-stratification*: a data frame with one or more category columns plus
-      a counts column. Several category columns are crossed automatically, so
-      there is no need to build a collapsed cell variable by hand.
-    - *Raking*: a list of data frames, one per margin.
-    - *Linear/GREG*: a named list matching the formula terms, with a data frame
-      (all categories) for each factor and a single number for each continuous
-      total; weightflow builds the model.matrix totals internally, so the user
-      never drops a reference category or handles the intercept.
-  Calibration also reports clearer diagnostics and warnings: post-stratification
-  flags cells in the sample but missing from the totals (error) or in the totals
-  but absent from the sample (warning); raking warns on mutually inconsistent
-  margins or non-convergence; linear calibration warns when the constraints are
-  not fully satisfied; and calibration variables with missing values raise an
-  informative error.
-* **Subsampling of more than one person per household in `step_select_within()`.**
-  A new `n_selected` argument (a single number or an unquoted column) works
-  alongside `n_eligible` for simple random selection of a subsample: the weight is
-  multiplied by `n_eligible / n_selected` (equivalent to
-  `prob = n_selected/n_eligible`). It defaults to 1, so selecting a single person
-  keeps working unchanged.
-* **External consistency totals for `step_model_calibration()`.** The totals of
-  the `x_formula` auxiliaries can now be supplied through the new `x_totals`
-  argument, in the same two shapes as `step_calibrate(method = "linear")`: the
-  tidy format (a named list with a data frame per factor, paired with `count`,
-  and a single number per continuous total) or the classic model-matrix vector.
-  This covers the common case where the X control totals come from an external
-  source rather than from the frame; the auxiliaries then need to be present only
-  in the sample, not in `population`. When `x_totals` is `NULL` (default) the X
-  totals are still taken from `population`, so existing code is unchanged.
-  `population` remains required, because the model-assisted block predicts each
-  outcome over every population unit. Model calibration now also warns, like
-  linear calibration, when the achieved totals do not fully satisfy the
-  constraints (collinear or ill-conditioned auxiliaries).
-* **Delete-a-PSU jackknife variance (recipe-aware).** `jackknife_weights()`
-  builds jackknife replicate weights by deleting one PSU at a time and re-running
-  the whole recipe on each replicate, so the replicate weights carry the
-  variability of every adjustment. It is the stratified jackknife (JKn) with
-  `strata`/`psu`, the unstratified jackknife (JK1) with `strata = NULL`, and the
-  delete-one-unit jackknife with `psu = NULL`. `jackknife_estimate()` (plus
-  `jack_total()` / `jack_mean()`) summarise a statistic with the JKn variance and
-  match `survey`'s replicate jackknife for totals. `as_svrepdesign()` now also
-  accepts a jackknife object, so the recipe-aware replicate weights flow into
-  `survey`/`srvyr` for any estimand and any domain.
-* **Domain (partitioned) calibration in `step_calibrate()`.** A new `by`
-  argument names a domain (partition) column; the weights are then calibrated
-  **independently within each domain**, each to its own totals (partitioned /
-  domain calibration). The tidy totals carry the domain as a
-  column, and a continuous total becomes a data frame `domain, value` (one total
-  per domain); the domain variable does not go in the formula/margins. It
-  composes with `calfun`, `bounds`, `penalty` and `equal_within_cluster`, applied
-  within each domain, and reproduces every domain's benchmarks. `by = NULL`
-  (default) calibrates globally, unchanged.
-* **Exponential (raking) distance for `step_calibrate(method = "linear")`.**
-  `calfun` now also accepts `"raking"` (the multiplicative distance g = exp(u)),
-  next to `"linear"` and `"logit"`. It keeps the calibration weights positive
-  without needing explicit `bounds` and still satisfies the constraints exactly,
-  and works on mixed categorical and continuous auxiliaries as well as with the
-  integrative option (`equal_within_cluster`, one weight per cluster). Matches
-  `survey::calibrate(calfun = "raking")`.
-* **R-indicator of response representativity (automatic diagnostic).** When the
-  recipe includes a nonresponse adjustment, `summary()` and `report_weighting()`
-  now report the R-indicator (Schouten, Cobben & Bethlehem), R = 1 - 2*S, with S
-  the design-weighted standard deviation of the estimated response propensities
-  over the eligible sample: closer to 1 means a more representative response and
-  less nonresponse-bias risk. The report also shows the unconditional partial
-  R-indicators by auxiliary, pointing to which variable drives the lack of
-  representativity. It is computed on the auxiliaries of the nonresponse step and
-  needs no new function or user action; recipes without a nonresponse step are
-  unaffected.
-* **Machine-learning response propensities** (CART, random forest and gradient
-  boosting via `xgboost`) for `step_nonresponse()` and `step_model_calibration()`.
-* **k-fold cross-fitting** (`crossfit`) to estimate each unit out-of-sample,
-  with folds formed by cluster to avoid leakage.
-* **Ridge (penalized) calibration** (`penalty`) to keep weights stable with many
-  auxiliaries.
-* **Potter MSE-optimal trimming** (`method = "potter"`), a data-driven cutoff.
-* **Quality alerts in `prep()`.** `prep()` now computes non-fatal quality alerts
-  and stores them on the prepped object (`$alerts`) and per step: negative or
-  sub-1 weights and g-factors outside the Deville-Särndal bounds `[0.1, 10]`
-  after calibration, small adjustment cells (new `min_cell_n`, default 30,
-  following Kalton and Flores-Cervantes 2003) and excessive adjustment factors
-  (new `max_factor`, default 2.5). Alerts always appear in the HTML report; set
-  `prep(warn = TRUE)` to also raise them as R warnings.
-* **Weight distribution and alerts in `report_weighting()`.** The report gains a
-  "Weight distribution (final)" summary (min, p1, median, p99, max, max/min ratio,
-  and counts of negative, sub-1 and extreme weights) and a per-step "Quality
-  alerts" block.
-* **New `disposition` column in the `sample_one` example data.** A single factor
-  with the full field disposition (eligible respondent, eligible nonrespondent,
-  household nonresponse, ineligible, unknown eligibility), recoded from the
-  existing indicator columns (which are kept). It gives a tidy single-column view
-  of the dispositions and can be used directly via logical conditions in the
-  steps.
-* **New vignette "Preparing the sample: eligibility and response before
-  weighting"**, on how the input sample should be classified (the disposition
-  tree), how it is sized (eligibility and response inflation) and how the
-  dispositions map to the adjustment steps.
+* **Tidy population totals** for `step_calibrate()`, alongside the classic
+  `margins`/`totals` inputs.
+* **Domain (partitioned) calibration** (`by`) and the **exponential (raking)
+  distance** (`calfun = "raking"`) for linear calibration.
+* **Delete-a-PSU jackknife** variance, recipe-aware like the bootstrap.
+* **Machine-learning response propensities** (CART, random forest, xgboost) with
+  **k-fold cross-fitting**, **ridge (penalized) calibration**, and **Potter
+  MSE-optimal trimming**.
+* **Quality alerts in `prep()`**, an **R-indicator** of response representativity,
+  and a weight-distribution summary in the report.
+* Subsampling more than one person per household (`n_selected`), external
+  consistency totals for model calibration (`x_totals`), and a new vignette on
+  preparing the sample.
 
 ## Bug fixes
 
-* The optional machine-learning engines (`engine = "forest"` via ranger,
-  `engine = "boost"` via xgboost) now run single-threaded by default, for
-  reproducibility and to respect the core limits applied in CRAN checks. Set
-  `options(weightflow.num_threads = n)` to use `n` threads.
-
-* `report_weighting()` now flags calibration steps that did not converge. When a
-  raking, linear or bounded calibration stops without satisfying the requested
-  totals (the same condition that already prints a console warning), the HTML
-  report shows a "Did not converge" alert on that step and no longer states that
-  the step converged. Previously the report always reported convergence,
-  regardless of the actual result.
-
+* The optional machine-learning engines now run single-threaded by default, for
+  reproducibility and to respect CRAN core limits.
+* `report_weighting()` flags calibration steps that did not converge.
 * `step_calibrate(equal_within_cluster = TRUE)` now implements the genuine
-  Lemaitre-Dufour (1987) integrative method: each unit's auxiliaries are
-  replaced by their household mean before a person-level calibration, so the
-  per-household penalty scales with household size. This matches `survey`'s
-  `calibrate(aggregate.stage = )` (Vanderhoeft 2001) to machine precision.
-  The previous implementation used a household-level distance
-  (summed auxiliaries, uniform per-household penalty), a different (non-standard)
-  method. Integrative-calibration weights will change; totals are still met
-  exactly and weights remain constant within household.
+  Lemaitre-Dufour (1987) integrative method.
 
 # weightflow 0.1.0
 
-First release.
+First release. The weighting cascade as a declarative recipe:
 
-A dependency-free, pipeable API to compute survey weights from design base
-weights through a chain of hierarchical adjustment stages. Build a recipe
-lazily, estimate it with `prep()`, and extract the weights with
-`collect_weights()`. Separating *define* from *apply* makes the whole process
-reproducible and auditable, and lets the bootstrap re-run the entire cascade on
-each replicate.
-
-## Adjustment steps
-
-* `step_unknown_eligibility()`: redistribute the weight of unknown-eligibility
-  cases to the known ones (person- or household-level via `cluster`).
-* `step_drop_ineligible()`: zero out out-of-scope units.
-* `step_select_within()`: within-household selection (unequal `prob` or equal
-  `n_eligible`).
-* `step_nonresponse()`: weighting-class or propensity adjustment, at the person
-  or household level (`cluster`).
-* `step_calibrate()`: raking, post-stratification and linear/GREG calibration,
-  with bounded (Deville-Särndal) and integrative (one weight per household)
-  cluster options.
-* `step_model_calibration()`: Wu-Sitter model calibration.
-* `step_trim()`, `step_trim_weights()`, `step_round()`, `step_rescale()`:
-  trimming, rounding and rescaling.
-* `step_assert()`: quality checkpoint (deff, weight ratio, effective n).
-
-## Inspection and reporting
-
-* `summary()`, `plot()` and `weight_factors()` for per-stage diagnostics.
-* `design_effect()` for the Kish design effect and effective sample size.
-* `report_weighting()` builds a self-contained HTML report with a pipeline
-  diagram, the variables used, per-stage summaries and per-step visuals.
-
-## Variance estimation
-
-* `bootstrap_weights()` resamples PSUs within strata (Rao-Wu rescaling) and
-  re-applies the whole recipe on each replicate, so the replicate weights carry
-  the variability of every adjustment.
-* `boot_mean()` and `boot_total()` return the estimate, standard error and CI.
-* `as_svydesign()`, `as_svrepdesign()` and `collect_replicate_weights()` bridge
-  to the `survey` and `srvyr` packages for design-based inference.
-
-## Data
-
-* Bundled example datasets `population`, `sample_survey` (take-all roster) and
-  `sample_one` (multistage select-one design), all with stratum, PSU and design
-  weight.
+* **Adjustment steps**: `step_unknown_eligibility()`, `step_drop_ineligible()`,
+  `step_select_within()`, `step_nonresponse()`, `step_calibrate()` (raking,
+  post-stratification, linear/GREG, bounded and integrative),
+  `step_model_calibration()`, `step_trim()`, `step_trim_weights()`, `step_round()`,
+  `step_rescale()` and `step_assert()`.
+* **Inspection and reporting**: `summary()`, `plot()`, `weight_factors()`,
+  `design_effect()` and a self-contained HTML report from `report_weighting()`.
+* **Variance estimation**: `bootstrap_weights()` (Rao-Wu rescaling, re-applying the
+  whole recipe on each replicate), `boot_mean()` / `boot_total()`, and bridges to
+  `survey` / `srvyr` through `as_svydesign()`, `as_svrepdesign()` and
+  `collect_replicate_weights()`.
+* **Example data**: `population`, `sample_survey` and `sample_one`.

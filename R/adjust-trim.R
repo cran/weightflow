@@ -7,19 +7,43 @@ apply_step.step_round <- function(step, data, w) {
   f      <- 10^step$digits
   sum_before <- sum(w[active])
 
+  bal_dev <- NA_real_
   if (step$method == "nearest") {
     new_w[active] <- round(w[active], step$digits)
-  } else {
+  } else if (step$method == "preserve_total") {
     # largest-remainder method: preserves the sum (on the `digits` scale)
     x      <- w[active] * f
     fl     <- floor(x)
     target <- round(sum(x))
     k      <- as.integer(round(target - sum(fl)))   # how many to round up
     if (k > 0) {
-      ord <- order(x - fl, decreasing = TRUE)
+      # ROUND-01. Ties in the fractional part are the RULE, not the exception: a
+      # self-weighting design, weights landing on .5, calibrated weights on a grid.
+      # order() is stable, so a plain order(x - fl) gave the extra unit to the first
+      # rows OF THE FILE every time, and a file sorted by region -- the usual layout
+      # -- then moved mass from the last domains to the first. Measured on 100 units
+      # at 12.5: North 650 / South 600 where both should be ~625, i.e. 4% off, in the
+      # method chosen PRECISELY to preserve totals, and with nothing in the
+      # diagnostics to show it (sum_before == sum_after, as promised). Break ties at
+      # random, which makes the allocation unbiased per unit. Weights with distinct
+      # fractional parts are unaffected: the ordering is the same as before.
+      ord <- order(x - fl, stats::runif(length(fl)), decreasing = TRUE)
       fl[ord[seq_len(min(k, length(fl)))]] <- fl[ord[seq_len(min(k, length(fl)))]] + 1
     }
     new_w[active] <- fl / f
+  } else {
+    # balanced (cube) rounding: keep the total of each `by` cell -- the calibrated
+    # domains -- not only the grand total. Cell indicators over the ACTIVE units
+    # form the balancing matrix; preserving every cell preserves the margins and
+    # the grand total too. .make_cells() crosses `by` exactly as the other steps.
+    cells <- .make_cells(data, step$by, length(w), active = active)[active]
+    cells <- droplevels(cells)
+    Z     <- stats::model.matrix(~ cells - 1)          # one indicator column per cell
+    new_w[active] <- .wf_balanced_round(w[active], Z, step$digits)
+    # honest quality number: worst preserved cell-total deviation (weight scale)
+    tot_before <- colSums(w[active] * Z)
+    tot_after  <- colSums(new_w[active] * Z)
+    bal_dev    <- max(abs(tot_after - tot_before) / pmax(abs(tot_before), 1))
   }
 
   diag <- data.frame(
@@ -30,6 +54,8 @@ apply_step.step_round <- function(step, data, w) {
     n_modified = sum(abs(new_w[active] - w[active]) > 1e-9),
     stringsAsFactors = FALSE
   )
+  if (identical(step$method, "balanced"))
+    diag$max_total_reldev <- signif(bal_dev, 3)
   list(weights = new_w, diagnostics = diag)
 }
 
@@ -91,6 +117,8 @@ apply_step.step_trim <- function(step, data, w) {
   # Iterative cap + redistribution (Potter/NAEP style), group by group
   total_trimmed <- 0L
   it_global     <- 0L
+  unredist      <- 0                 # mass that could not be handed back (TRIM-02)
+  sum_before    <- sum(new_w[active])
   for (g in levels(cells)) {
     gi <- which(cells == g & active)
     if (!length(gi)) next
@@ -119,7 +147,7 @@ apply_step.step_trim <- function(step, data, w) {
       }
       # spread the excess proportionally among those within band
       free <- gi[new_w[gi] < cap[gi] & new_w[gi] > floor_v[gi]]
-      if (!length(free)) break                  # nowhere to redistribute
+      if (!length(free)) { unredist <- unredist + excess; break }  # nowhere to redistribute
       # Proportional-to-weight redistribution assumes positive weights. If the
       # free set's weight sum is not clearly positive (negative weights from an
       # earlier GREG), the proportional factor explodes or flips sign -- fall back
@@ -132,12 +160,21 @@ apply_step.step_trim <- function(step, data, w) {
   }
 
   deff_after <- design_effect(new_w)$deff
+  sum_after  <- sum(new_w[active])
+  # Warn (not just a deferred alert) when mass could not be handed back, like the other
+  # two trim steps -- prep(warn = FALSE) is the default, so a silent total change is easy
+  # to miss. (TRIM-02)
+  if (abs(unredist) > 1e-9)
+    warning(sprintf(paste0("step_trim(): %.4g of weight could not be redistributed (no units ",
+                          "left within the band to receive it), so the weighted total changed ",
+                          "by that amount."), unredist), call. = FALSE)
   diag <- data.frame(
     reference   = step$reference,
     cap         = step$max_ratio,
     floor       = ifelse(is.null(step$min_ratio), NA, step$min_ratio),
     trimmed     = total_trimmed,
     redistributed = step$redistribute,
+    sum_before  = round(sum_before, 2), sum_after = round(sum_after, 2),
     deff_before = round(deff_before, 3),
     deff_after  = round(deff_after, 3),
     stringsAsFactors = FALSE
@@ -149,7 +186,7 @@ apply_step.step_trim <- function(step, data, w) {
     by = if (!is.null(step$by)) as.character(cells)[ai] else NULL,
     redistribute = if (isTRUE(step$redistribute)) "proportional" else "none",
     method = step$reference, kind = "ratio", f = new_w[ai] / w[ai],
-    unredist = NA_real_, deff_before = deff_before, deff_after = deff_after)
+    unredist = unredist, deff_before = deff_before, deff_after = deff_after)
   list(weights = new_w, diagnostics = diag)
 }
 
@@ -251,7 +288,15 @@ apply_step.step_model_calibration <- function(step, data, w) {
          "reach the model engine (an error, or silent surrogate imputation). Impute or drop ",
          "them first.", call. = FALSE)
 
-  # Model-assisted block: one prediction column per model y
+  # Model-assisted block: one prediction column per model y.
+  # ML-01: fix regression-vs-classification here, ONCE, on the whole sample, so that
+  # every cross-fitting fold predicts on the same scale. Deciding it inside the fold
+  # let a y value missing from one fold's training set flip that fold alone.
+  step$models <- lapply(step$models, function(m) {
+    yv <- sdata[[as.character(m$formula[[2L]])]]
+    m$classify <- .wf_is_class(yv, m$family)
+    m
+  })
   mu_cols <- list(); Tmu <- numeric(0)
   for (k in names(step$models)) {
     m <- step$models[[k]]
@@ -275,12 +320,21 @@ apply_step.step_model_calibration <- function(step, data, w) {
   colnames(Z) <- c(colnames(X), names(step$models))
   Tvec <- c(Tx, Tmu)
 
+  # Calibration solver: closed-form linear GREG when unbounded (the default),
+  # bounded Deville-Sarndal iteration when `bounds`/`calfun` are set. Shared with
+  # step_calibrate() through .solve_calibration(). The defaults guard specs built
+  # before `bounds` existed (an older step list has no calfun/bounds/maxit/tol).
+  cf_fun <- if (is.null(step$calfun)) "linear" else step$calfun
+  cf_bnd <- step$bounds
+  cf_mx  <- if (is.null(step$maxit)) 100L else step$maxit
+  cf_tl  <- if (is.null(step$tol))   1e-7 else step$tol
+  solver_ok <- TRUE
+
   if (!step$equal_within_cluster) {
-    # Unit-level linear calibration
-    A      <- t(Z) %*% (d * Z)
-    rhs    <- Tvec - colSums(d * Z)
-    lambda <- .solve_calib(A, rhs)
-    g      <- as.numeric(1 + Z %*% lambda)
+    # Unit-level calibration
+    sol    <- .solve_calibration(Z, d, Tvec, cf_fun, cf_bnd, maxit = cf_mx, tol = cf_tl)
+    g      <- sol$g
+    solver_ok <- isTRUE(sol$converged)
     new_w[active] <- d * g
     note_clust <- ""
   } else {
@@ -297,10 +351,9 @@ apply_step.step_model_calibration <- function(step, data, w) {
     n_h  <- as.numeric(tapply(d, cl, length)[hh])   # persons per household
     Wsum <- as.numeric(tapply(d, cl, sum)[hh])      # total base weight in household
     Xbar <- rowsum(Z, group = cl)[hh, , drop = FALSE] / n_h  # household MEANS of Z
-    A      <- t(Xbar) %*% (Wsum * Xbar)
-    rhs    <- Tvec - colSums(Wsum * Xbar)
-    lambda <- .solve_calib(A, rhs)
-    gh     <- as.numeric(1 + Xbar %*% lambda)
+    sol    <- .solve_calibration(Xbar, Wsum, Tvec, cf_fun, cf_bnd, maxit = cf_mx, tol = cf_tl)
+    gh     <- sol$g
+    solver_ok <- isTRUE(sol$converged)
     names(gh) <- hh
     new_w[active] <- d * gh[cl]                     # own base weight x household g-factor
     g <- gh
@@ -309,26 +362,39 @@ apply_step.step_model_calibration <- function(step, data, w) {
 
   achieved <- colSums(new_w[active] * Z)
   # Check that the calibration constraints (X and model blocks) are satisfied.
-  # Model calibration is unbounded linear, so deviations only arise from
-  # collinear auxiliaries or an ill-conditioned system.
+  # Unbounded model calibration is exact up to numerical precision, so a deviation
+  # points to collinear auxiliaries or an ill-conditioned system; with `bounds`,
+  # a deviation can also mean the requested range is infeasible for these totals.
   rel_dev <- abs(achieved - Tvec) / (abs(Tvec) + 1)
   off     <- which(rel_dev > 1e-6)
-  if (length(off) > 0L)
+  if (length(off) > 0L) {
+    cause <- if (is.null(cf_bnd))
+      "collinear auxiliaries or an ill-conditioned system; check the auxiliary variables."
+    else
+      "collinear auxiliaries, an ill-conditioned system, or an infeasible `bounds` range; widen the bounds or check the auxiliaries."
     warning(sprintf(
       paste0("Model calibration did not fully satisfy the constraints for: %s. ",
              "The achieved totals differ from the targets (max relative ",
-             "deviation = %.2e); this can happen with collinear auxiliaries or ",
-             "an ill-conditioned system; check the auxiliary variables."),
-      paste(utils::head(colnames(Z)[off], 10L), collapse = ", "), max(rel_dev)),
+             "deviation = %.2e); this can happen with %s"),
+      paste(utils::head(colnames(Z)[off], 10L), collapse = ", "), max(rel_dev), cause),
       call. = FALSE)
+  }
   type <- c(rep("X (consistency)", ncol(X)),
             rep("y (model)", length(step$models)))
   diag <- data.frame(constraint = colnames(Z), type = type,
                      target = round(Tvec, 2), achieved = round(achieved, 2),
                      stringsAsFactors = FALSE)
-  attr(diag, "converged") <- (length(off) == 0L)
-  attr(diag, "note") <- sprintf("g (calibration factor) in [%.3f, %.3f]%s",
-                                min(g), max(g), note_clust)
+  attr(diag, "converged") <- (length(off) == 0L) && isTRUE(solver_ok)
+  bnd_note <- if (is.null(cf_bnd)) "" else sprintf(", bounds [%.3f, %.3f]", cf_bnd[1], cf_bnd[2])
+  attr(diag, "note") <- sprintf("g (calibration factor) in [%.3f, %.3f]%s%s",
+                                min(g), max(g), bnd_note, note_clust)
+  # Save the model-prediction columns (the mu block of Z) on the weights so a
+  # FOLLOWING step_trim_calibrated() can preserve the model totals T_mu, not only
+  # the X margins. prep() passes `w` forward to the next step, which reads this
+  # attribute; it is consumed and stripped there (and by prep() at the end).
+  mu_mat <- do.call(cbind, mu_cols)
+  colnames(mu_mat) <- names(step$models)
+  attr(new_w, "wf_modelcal") <- list(mu = mu_mat, active = which(active))
   list(weights = new_w, diagnostics = diag)
 }
 
@@ -381,12 +447,19 @@ apply_step.step_assert <- function(step, data, w) {
 # shifts before redistribution) and variance(t) is proportional to the sum of
 # squared weights that remain after capping at t. The cutoff with the smallest
 # estimated MSE is returned. The grid runs over the upper tail of the weights.
-.potter_threshold <- function(wv, ngrid = 100L) {
+# TRIM-01 documents what this criterion assumes; see the Details section of
+# step_trim_weights(). In short: the two terms sit on different orders of n on
+# purpose (it is the MSE of a TOTAL, so the cutoff rises with the sample size for
+# the same weight distribution), and the bias charged is the bias of capping
+# WITHOUT redistribution while the step always redistributes -- so the criterion
+# overstates the bias and caps less than its own name promises. `kappa` prices bias
+# against variance; 1 is Potter's own weighting and leaves the cutoff unchanged.
+.potter_threshold <- function(wv, ngrid = 100L, kappa = 1) {
   qs    <- stats::quantile(wv, c(0.50, 0.999))
   grid  <- seq(as.numeric(qs[1]), as.numeric(qs[2]), length.out = ngrid)
   bias2 <- vapply(grid, function(t) sum(wv[wv > t] - t)^2, numeric(1))  # bias(t)^2
   varc  <- vapply(grid, function(t) sum(pmin(wv, t)^2),     numeric(1))  # dispersion remaining
-  mse   <- bias2 + varc
+  mse   <- kappa * bias2 + varc
   best  <- grid[which.min(mse)]
   attr(best, "grid")  <- grid;  attr(best, "bias2") <- bias2
   attr(best, "varc")  <- varc;  attr(best, "mse")   <- mse
@@ -404,12 +477,23 @@ apply_step.step_trim_weights <- function(step, data, w) {
   upper <- step$upper
   if (is.null(upper)) {
     if (identical(step$method, "potter")) {
-      upper   <- .potter_threshold(wv)               # MSE-optimal cutoff (Potter)
+      upper   <- .potter_threshold(wv, kappa = step$kappa %||% 1)   # MSE-optimal cutoff (Potter)
       pot_obj <- upper                               # keep grid/mse for the report
       upper   <- as.numeric(upper)
     } else {
-      q  <- stats::quantile(wv, c(.25, .75))
-      upper <- as.numeric(q[2] + 3 * (q[2] - q[1]))  # Tukey far-out fence
+      q   <- stats::quantile(wv, c(.25, .75))
+      iqr <- as.numeric(q[2] - q[1])
+      if (iqr > 0) {
+        upper <- as.numeric(q[2] + 3 * iqr)          # Tukey far-out fence
+      } else {
+        # IQR == 0: a dominant modal weight or a (near) self-weighting design. The
+        # Tukey fence then degenerates to Q3 (the mode), so every unit above the mode
+        # is capped and the receiving set (units strictly below the cap) is EMPTY --
+        # the capped mass would be lost silently. Fall back to a high quantile, which
+        # keeps the modal units as a non-empty receiving set.
+        upper <- as.numeric(stats::quantile(wv, 0.99))
+        if (upper <= q[2]) upper <- max(wv)          # still degenerate -> nothing to trim
+      }
     }
   }
   # `lower = NULL` means "no floor" -> -Inf. (Leaving it NULL makes `wv < lower`
@@ -468,6 +552,16 @@ apply_step.step_trim_weights <- function(step, data, w) {
     }
   }
   new_w[active] <- wv
+
+  # Mass that could not be handed back (no eligible receiving units) changes the weighted
+  # total. The report emits a deferred alert, but prep(warn = FALSE) is the default, so warn
+  # from the step itself -- silent mass loss is the failure this preserves-the-total step
+  # exists to avoid.
+  if (abs(unredist) > 1e-9)
+    warning(sprintf(paste0("step_trim_weights(): %.4g of weight could not be redistributed ",
+                          "(no units left to receive the trimmed mass), so the weighted total ",
+                          "changed by that amount. Set `upper`/`lower` explicitly, or check for ",
+                          "a dominant modal weight."), unredist), call. = FALSE)
 
   diag <- data.frame(
     method = if (is.null(step$method)) "tukey" else step$method,
@@ -540,6 +634,22 @@ apply_step.step_trim_calibrated <- function(step, data, w) {
     stop("Auxiliaries in `formula` have missing values in the active sample; ",
          "trimmed calibration needs them observed for every unit being trimmed.")
   cn <- colnames(X)
+
+  # If the previous step was a step_model_calibration(), it saved its prediction
+  # columns (the mu block of Z) on the incoming weights. Append them so we preserve
+  # the MODEL totals T_mu too, not only the X margins in `formula`. Absent (the usual
+  # case, after step_calibrate) -> unchanged behaviour.
+  mc <- attr(w, "wf_modelcal")
+  if (!is.null(mc)) {
+    if (identical(mc$active, which(active)) && nrow(mc$mu) == length(d)) {
+      X  <- cbind(X, mc$mu)
+      cn <- colnames(X)
+    } else {
+      warning(paste0("A preceding step_model_calibration()'s predictions are not aligned ",
+                     "with the active sample here (an intermediate step changed it); trimming ",
+                     "preserves only the X margins in `formula`."), call. = FALSE)
+    }
+  }
 
   # Totals to PRESERVE: the ones the incoming weights already reproduce.
   Tvec <- colSums(d * X)
@@ -618,8 +728,12 @@ apply_step.step_trim_calibrated <- function(step, data, w) {
   conv_ok  <- isTRUE(attr(gsol, "converged")) && max(rel_dev) <= 1e-6
   # bounds may be per-unit (subgroup `by`); label them as a single value when
   # constant, else "by group", and count units at their OWN bound.
-  lo_lab <- if (length(unique(lower)) == 1L) format(lower[1]) else "by group"
-  up_lab <- if (length(unique(upper)) == 1L) format(upper[1]) else "by group"
+  # Both endpoints go through ONE formatter. format() uses 7 *significant* digits,
+  # so a pair like (0.00083516172, 109.806432) printed as
+  # "[0.0008351617, 109.8064]" -- ten decimals on one side, four on the other.
+  .b <- function(z) formatC(z, format = "fg", digits = 4, big.mark = ",", drop0trailing = TRUE)
+  lo_lab <- if (length(unique(lower)) == 1L) .b(lower[1]) else "by group"
+  up_lab <- if (length(unique(upper)) == 1L) .b(upper[1]) else "by group"
   if (!conv_ok)
     warning(sprintf(paste0("Trimmed calibration could not both stay within ",
       "[%s, %s] and preserve every total (max relative deviation = %.2e). ",
@@ -634,9 +748,9 @@ apply_step.step_trim_calibrated <- function(step, data, w) {
   attr(diag, "converged") <- conv_ok
   attr(diag, "note") <- sprintf(
     paste0("trimmed calibration to [%s, %s] (calfun = %s); %d weights raised to ",
-           "lower, %d capped at upper; f (adjustment) in [%.3f, %.3f]%s"),
+           "lower, %d capped at upper; f (adjustment) in [%s, %s]%s"),
     lo_lab, up_lab, step$calfun, n_at_lower, n_at_upper,
-    min(f), max(f), note_clust)
+    .b(min(f)), .b(max(f)), note_clust)
   attr(diag, "trim") <- data.frame(
     lower = if (length(unique(lower)) == 1L) lower[1] else NA_real_,
     upper = if (length(unique(upper)) == 1L) upper[1] else NA_real_,
@@ -650,6 +764,7 @@ apply_step.step_trim_calibrated <- function(step, data, w) {
     redistribute = "calibration", method = step$calfun, kind = "calibrated",
     f = f, unredist = NA_real_,
     deff_before = design_effect(w)$deff, deff_after = design_effect(new_w)$deff)
+  attr(new_w, "wf_modelcal") <- NULL   # consumed; do not carry it further
   list(weights = new_w, diagnostics = diag)
 }
 

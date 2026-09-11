@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Pure panels: the longitudinal weight and gross flows</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Pure panels: the longitudinal weight and
+gross flows</h1>
+
+
+
+<p>A <strong>pure panel</strong> follows one sample over several waves
+without rotating it. Nobody enters after the first wave; people only
+leave. That makes it the right instrument for questions a series of
+cross-sections cannot answer – who moved between states, how long spells
+last, whether the same households are poor two years running – and it
+makes its weight a different object from the cross-sectional one, with a
+different target population, a different denominator and a different
+failure mode.</p>
+<p>This vignette builds a longitudinal weight over four waves and uses
+it for gross flows. The rotating case, where the sample is partly
+renewed each period and the quantity of interest is usually the net
+change, is <code>vignette(&quot;rotating-panels&quot;)</code>.</p>
+<div id="the-longitudinal-file-is-an-intersection" class="section level2">
+<h2>The longitudinal file is an intersection</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>waves <span class="ot">&lt;-</span> <span class="fu">split</span>(panel_puro, panel_puro<span class="sc">$</span>wave)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">names</span>(waves) <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">&quot;T&quot;</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>wide <span class="ot">&lt;-</span> <span class="fu">panel_merge</span>(waves, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">require =</span> <span class="st">&quot;all&quot;</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="fu">c</span>(<span class="at">T1_sample =</span> <span class="fu">nrow</span>(waves<span class="sc">$</span>T1), <span class="at">linked_all_four =</span> <span class="fu">nrow</span>(wide))</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="co">#&gt;       T1_sample linked_all_four </span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="co">#&gt;            2314            2142</span></span></code></pre></div>
+<p><code>require = &quot;all&quot;</code> keeps the units observed in
+<strong>every</strong> wave; <code>require = &quot;any&quot;</code> would keep the
+union. Each repeated variable is suffixed by wave, and a
+<code>.wf_in_&lt;wave&gt;</code> indicator records presence. Adding a
+wave can only remove units, never add them, which is the defining
+property of the design and worth checking as you go:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">vapply</span>(<span class="dv">2</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(k)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="fu">nrow</span>(<span class="fu">panel_merge</span>(waves[<span class="dv">1</span><span class="sc">:</span>k], <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">require =</span> <span class="st">&quot;all&quot;</span>)),</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  <span class="fu">integer</span>(<span class="dv">1</span>))</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; [1] 2314 2239 2142</span></span></code></pre></div>
+</div>
+<div id="three-ways-to-be-missing-and-only-one-of-them-is-nonresponse" class="section level2">
+<h2>Three ways to be missing, and only one of them is nonresponse</h2>
+<p>The field disposition in these data distinguishes three things that a
+single “missing” flag would collapse:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">table</span>(<span class="at">wave_4 =</span> wide<span class="sc">$</span>disposition_T4)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="co">#&gt; wave_4</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt;   NR   OS    R  UNK </span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt;  176  100 1804   62</span></span></code></pre></div>
+<ul>
+<li><strong><code>OS</code> – out of scope.</strong> The unit left the
+target population: it died, emigrated, the dwelling was demolished. It
+is not a nonrespondent; it is no longer a member of the universe. Its
+weight must be <strong>removed</strong>, not redistributed, or the
+estimated population grows every wave.</li>
+<li><strong><code>UNK</code> – unknown eligibility.</strong> Nobody
+knows whether the unit is still in scope. Treating it as eligible
+inflates the population; treating it as out of scope deflates it. The
+standard answer is to split it in the observed proportion of
+known-eligible units, which is what
+<code>step_unknown_eligibility()</code> does.</li>
+<li><strong><code>NR</code> – nonresponse.</strong> The unit is still in
+the universe and did not answer. Its weight <strong>is</strong>
+redistributed, among the units that remain.</li>
+</ul>
+<p>The order of the steps follows the same logic: leave the universe
+first, resolve what is unknown second, and only then adjust for the
+nonresponse of those who are certainly in.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>resp <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(k) wide[[<span class="fu">paste0</span>(<span class="st">&quot;disposition_T&quot;</span>, k)]] <span class="sc">==</span> <span class="st">&quot;R&quot;</span>, <span class="fu">logical</span>(<span class="fu">nrow</span>(wide)))</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>wide<span class="sc">$</span>responded_always <span class="ot">&lt;-</span> <span class="fu">rowSums</span>(resp) <span class="sc">==</span> <span class="dv">4</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>lw <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wide, <span class="at">base_weights =</span> pw_T1) <span class="sc">|&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(disposition_T4 <span class="sc">==</span> <span class="st">&quot;OS&quot;</span>, <span class="at">reason =</span> <span class="st">&quot;left the target population&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(disposition_T4 <span class="sc">==</span> <span class="st">&quot;UNK&quot;</span>, <span class="at">by =</span> <span class="st">&quot;region_T1&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="fu">step_attrition</span>(<span class="at">respondent =</span> responded_always, <span class="at">method =</span> <span class="st">&quot;propensity&quot;</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>                 <span class="at">formula =</span> <span class="sc">~</span> age_T1 <span class="sc">+</span> sex_T1 <span class="sc">+</span> region_T1) <span class="sc">|&gt;</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>lw</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; == Weighting specification (weightflow) ==</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; Data    : 2142 cases</span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt; Base wts: pw_T1</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt; Steps   :</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;   1. drop ineligible (left the target population)  [drop_ineligible_1]</span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;   2. unknown eligibility  [unknown_eligibility_1]</span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;   3. attrition (propensity)  [nonresponse_1]</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt; Status  : estimated (prep)</span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; Stage summary:</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt;                             stage n_active sum_wts cv_wts deff_kish n_eff</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt;                              base     2142  307536  0.300     1.090  1966</span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;      stage_1_step_drop_ineligible     2042  293772  0.298     1.089  1875</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt;  stage_2_step_unknown_eligibility     1980  293772  0.297     1.088  1820</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt;            stage_3_step_attrition     1363  293769  0.297     1.088  1252</span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt; deff_kish = 1 + CV^2 (Kish design effect from unequal weighting);</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt; n_eff = n_active / deff_kish. Both worsen with each adjustment and</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; improve with trimming.</span></span></code></pre></div>
+<p>Two things to read there. The <strong>sum of the weights</strong>
+barely moves at the attrition step (293,772 to 293,769, one part in a
+hundred thousand) while the active sample falls from 1,980 to 1,363:
+that is what an adjustment by the inverse of an estimated response
+propensity is supposed to do, and <code>weighting_alerts()</code> says
+so out loud if the total moves by more than 5%. The <strong>effective
+sample size</strong> is the price: 1,820 to 1,252.</p>
+<p>Note also how the respondent condition is defined. “Responded in
+<strong>all</strong> waves” is the definition of the longitudinal
+respondent set: someone who answered three of four waves contributes no
+complete trajectory and is a nonrespondent here, however useful they are
+for the cross-section.</p>
+<div id="attrition-compounds" class="section level3">
+<h3>Attrition compounds</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">through =</span> <span class="fu">paste0</span>(<span class="st">&quot;T&quot;</span>, <span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>),</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>           <span class="at">complete =</span> <span class="fu">vapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(k) <span class="fu">sum</span>(<span class="fu">rowSums</span>(resp[, <span class="dv">1</span><span class="sc">:</span>k, <span class="at">drop =</span> <span class="cn">FALSE</span>]) <span class="sc">==</span> k), <span class="dv">0</span><span class="dt">L</span>))</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;   through complete</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; 1      T1     2040</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; 2      T2     1814</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; 3      T3     1622</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; 4      T4     1363</span></span></code></pre></div>
+<p>Each wave keeps between 84% and 89% of the previous one, so by the
+fourth only two of every three initial respondents are left. This is the
+structural reason a longitudinal weight carries more adjustment than a
+cross-sectional one, and why the propensity model deserves more care: by
+the fourth wave it is doing the work of a much larger correction.</p>
+</div>
+</div>
+<div id="calibrate-to-the-first-wave" class="section level2">
+<h2>Calibrate to the <strong>first</strong> wave</h2>
+<p>A panel adds no elements over time, so it is representative only of
+the population of the period in which it was selected. ECLAC’s
+household-survey manual (ch. XVI, sec. B.2.c) is explicit that the
+auxiliary totals must therefore represent the population of the
+<strong>first</strong> period of interest.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>t1 <span class="ot">&lt;-</span> waves<span class="sc">$</span>T1</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>sex_tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">sex_T1   =</span> <span class="fu">names</span>(<span class="fu">tapply</span>(t1<span class="sc">$</span>pw, t1<span class="sc">$</span>sex, sum)),</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>                      <span class="at">Freq      =</span> <span class="fu">as.numeric</span>(<span class="fu">tapply</span>(t1<span class="sc">$</span>pw, t1<span class="sc">$</span>sex, sum)))</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>reg_tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">region_T1 =</span> <span class="fu">names</span>(<span class="fu">tapply</span>(t1<span class="sc">$</span>pw, t1<span class="sc">$</span>region, sum)),</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>                      <span class="at">Freq      =</span> <span class="fu">as.numeric</span>(<span class="fu">tapply</span>(t1<span class="sc">$</span>pw, t1<span class="sc">$</span>region, sum)))</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>lw <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wide, <span class="at">base_weights =</span> pw_T1) <span class="sc">|&gt;</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(disposition_T4 <span class="sc">==</span> <span class="st">&quot;OS&quot;</span>, <span class="at">reason =</span> <span class="st">&quot;left the target population&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>  <span class="fu">step_unknown_eligibility</span>(disposition_T4 <span class="sc">==</span> <span class="st">&quot;UNK&quot;</span>, <span class="at">by =</span> <span class="st">&quot;region_T1&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  <span class="fu">step_attrition</span>(<span class="at">respondent =</span> responded_always, <span class="at">method =</span> <span class="st">&quot;propensity&quot;</span>,</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>                 <span class="at">formula =</span> <span class="sc">~</span> age_T1 <span class="sc">+</span> sex_T1 <span class="sc">+</span> region_T1) <span class="sc">|&gt;</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>  <span class="fu">step_calibrate</span>(<span class="at">method =</span> <span class="st">&quot;raking&quot;</span>, <span class="at">totals =</span> <span class="fu">list</span>(sex_tab, reg_tab), <span class="at">count =</span> <span class="st">&quot;Freq&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="fu">c</span>(<span class="at">calibrated =</span> <span class="fu">sum</span>(lw<span class="sc">$</span>final_weight), <span class="at">T1_population =</span> <span class="fu">sum</span>(t1<span class="sc">$</span>pw))</span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt;    calibrated T1_population </span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;      333288.2      333288.2</span></span></code></pre></div>
+<p>(In production those totals are demographic projections; here the
+design-weighted totals of the full first wave stand in for them.)</p>
+<p>This is the one convention in the whole cascade that <strong>nothing
+can check for you</strong>. A vector of control totals carries no label
+saying which period it belongs to, so passing the fourth wave’s
+projections converges just as happily, closes just as cleanly, and
+produces weights that represent a population the sample never had a
+chance to cover. The recipe is auditable; the provenance of the totals
+is yours.</p>
+</div>
+<div id="gross-flows" class="section level2">
+<h2>Gross flows</h2>
+<p>A net change is a difference of aggregates: it cannot tell an
+immobile population from one where equal numbers enter and leave
+employment. The longitudinal weight can.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>STATES <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;emp&quot;</span>, <span class="st">&quot;unemp&quot;</span>, <span class="st">&quot;inact&quot;</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="fu">transition_matrix</span>(lw, <span class="at">from =</span> <span class="st">&quot;lf_status_T1&quot;</span>, <span class="at">to =</span> <span class="st">&quot;lf_status_T4&quot;</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                  <span class="at">states =</span> STATES, <span class="at">format =</span> <span class="st">&quot;row&quot;</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow transition: lf_status_T1 -&gt; lf_status_T4  [row]&gt;</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; from       emp  unemp inact</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt;   emp   0.8929 0.1071     0</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   unemp 0.3086 0.6914     0</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   inact 0.0000 0.0000     1</span></span></code></pre></div>
+<p><code>format = &quot;row&quot;</code> gives the conditional distribution of the
+destination given the origin – each row sums to one.
+<code>&quot;joint&quot;</code> gives the joint distribution and
+<code>&quot;counts&quot;</code> the weighted counts. For standard errors, resample
+the whole recipe and read the transitions off the replicates:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">bootstrap_weights</span>(lw, <span class="at">replicates =</span> <span class="dv">100</span>, <span class="at">strata =</span> <span class="st">&quot;stratum_T1&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu_T1&quot;</span>,</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>                       <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">boot_transition</span>(b, <span class="st">&quot;lf_status_T1&quot;</span>, <span class="st">&quot;lf_status_T4&quot;</span>, <span class="at">states =</span> STATES, <span class="at">format =</span> <span class="st">&quot;row&quot;</span>)</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow transition: lf_status_T1 -&gt; lf_status_T4  [row]  with bootstrap SE&gt;</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt; estimate:</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; from       emp  unemp inact</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt;   emp   0.8929 0.1071     0</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt;   unemp 0.3086 0.6914     0</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt;   inact 0.0000 0.0000     1</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; SE:</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; from       emp  unemp inact</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt;   emp   0.0116 0.0116     0</span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt;   unemp 0.0269 0.0269     0</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt;   inact 0.0000 0.0000     0</span></span></code></pre></div>
+<p>Every replicate re-runs the eligibility drop, the unknown-eligibility
+split, the propensity model and the calibration, so the standard errors
+include the cost of having estimated the adjustments – not just the
+sampling of the units.</p>
+<p><code>boot_flows()</code> reports the same information as population
+totals, adds the <strong>net</strong> flow <code>i -&gt; j</code> minus
+<code>j -&gt; i</code>, and gives the margins: how many started in each
+state, how many ended in each, how many stayed and how many moved.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">boot_flows</span>(b, <span class="st">&quot;lf_status_T1&quot;</span>, <span class="st">&quot;lf_status_T4&quot;</span>, <span class="at">states =</span> STATES)</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow gross flows (population totals): lf_status_T1 -&gt; lf_status_T4  with bootstrap SE&gt;</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#&gt; counts (gross flow):</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; from         emp   unemp   inact</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt;   emp   156012.6 18706.4     0.0</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt;   unemp  19272.7 43176.1     0.0</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt;   inact      0.0     0.0 96120.4</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; SE:</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt; from       emp  unemp  inact</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt;   emp   5401.4 2108.4    0.0</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt;   unemp 2169.9 2867.7    0.0</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt;   inact    0.0    0.0 4646.7</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; net flow (i-&gt;j minus j-&gt;i):</span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="co">#&gt; from      emp  unemp inact</span></span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="co">#&gt;   emp     0.0 -566.2     0</span></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt;   unemp 566.2    0.0     0</span></span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt;   inact   0.0    0.0     0</span></span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt; margins (origin = started in state, dest = ended in state):</span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt;  state   origin origin_se     dest dest_se</span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt;    emp 174719.1    5595.3 175285.3  5348.6</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt;  unemp  62448.8    3764.0  61882.6  3440.4</span></span>
+<span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a><span class="co">#&gt;  inact  96120.4    4646.7  96120.4  4646.7</span></span>
+<span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a><span class="co">#&gt; stayers 295309 (SE 2943)  |  movers 37979 (SE 2943)</span></span></code></pre></div>
+<p>A caveat about the illustration, not the method: the shipped panel
+datasets are synthetic, and in all of them <strong>inactivity is an
+absorbing state</strong> – nobody enters or leaves it. So the matrices
+above show movement only between employment and unemployment, and the
+<code>inact</code> row and column are degenerate. On real microdata the
+transitions in and out of inactivity are usually the interesting
+ones.</p>
+</div>
+<div id="cross-sectional-estimates-from-a-longitudinal-file-are-reference-only" class="section level2">
+<h2>Cross-sectional estimates from a longitudinal file are reference
+only</h2>
+<p>They will not reproduce the published cross-sectional figures, and
+they should not. The target population of a four-wave panel combination
+is the set of units that were in the universe at T1 <strong>and
+stayed</strong> through T4; the target population of the T4
+cross-section is everyone in the universe at T4, including those who
+entered after T1. Two different populations, two different weights, both
+correct for their own question. Use the longitudinal weight for flows,
+transitions and durations, and the cross-sectional weight for
+levels.</p>
+<p><code>step_cross_sectional()</code> marks a recipe as the second
+kind, which is what stops the panel-specific guards from firing on a
+recipe that is not trying to be longitudinal.</p>
+</div>
+<div id="where-to-look-next" class="section level2">
+<h2>Where to look next</h2>
+<p><code>?panel_merge</code> for the linkage,
+<code>?step_attrition</code> for the adjustment families,
+<code>?step_unknown_eligibility</code> and
+<code>?step_drop_ineligible</code> for the two things that are not
+nonresponse, <code>?transition_matrix</code> and
+<code>?boot_flows</code> for the flows, and
+<code>?step_cross_sectional</code> for the ECLAC conventions in full.
+The rotating case, net change and the chained production workflow are in
+<code>vignette(&quot;rotating-panels&quot;)</code>.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

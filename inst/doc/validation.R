@@ -217,3 +217,15 @@ data.frame(method = names(agree), `max abs weight difference` = unname(agree),
 # cal   <- ReGenesees::e.calibrate(des, df.population = templ, calfun = "linear")
 # w_rg  <- weights(ReGenesees::trimcal(cal, w.range = c(lo, up)))
 
+## ----svydelta-regenesees, eval = FALSE----------------------------------------
+# # weightflow
+# wj <- wave_jackknife(list(T1 = weighting_spec(s1, base_weights = w),
+#                           T2 = weighting_spec(s2, base_weights = w)),
+#                      strata = "strata", psu = "id")
+# change_total(wj, "y")
+# 
+# # ReGenesees
+# d1 <- ReGenesees::e.svydesign(ids = ~ id, strata = ~ strata, weights = ~ w, data = s1)
+# d2 <- ReGenesees::e.svydesign(ids = ~ id, strata = ~ strata, weights = ~ w, data = s2)
+# ReGenesees::svyDelta(expression(y.2 - y.1), d1, d2, rho.STRAT = "noJump")
+

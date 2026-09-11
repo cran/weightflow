@@ -118,6 +118,18 @@ reference_sample <- function(data, weights, replicates = NULL) {
 #' @param equal_within_cluster logical. If TRUE, integrative calibration: a
 #'   single weight per cluster. Requires `cluster` and that the incoming weight
 #'   be uniform within the cluster.
+#' @param calfun distance function for the calibration, as in [step_calibrate()]:
+#'   `"linear"` (GREG, the default; closed form when unbounded), `"raking"` or
+#'   `"logit"` (both solved by the Deville-Sarndal iteration). `"logit"` requires
+#'   `bounds`.
+#' @param bounds optional numeric `c(L, U)` with `L < 1 < U`, bounding the
+#'   calibration g-factor so the final weights stay in `[L, U]` times the incoming
+#'   weight (same meaning and validation as in [step_calibrate()]). `NULL`
+#'   (default) leaves the calibration unbounded. When set, the g-factors are found
+#'   by the bounded Deville-Sarndal iteration, which keeps weights from turning
+#'   negative or exploding; an infeasible range raises a non-convergence warning.
+#' @param maxit,tol iteration cap and convergence tolerance for the bounded /
+#'   non-linear solver (ignored for unbounded `calfun = "linear"`).
 #' @param crossfit integer or NULL. If given (K >= 2 folds), the outcome models
 #'   are fitted by K-fold cross-fitting: the sample predictions are out-of-fold
 #'   (each unit predicted by a model that did not see it), which avoids
@@ -189,12 +201,31 @@ reference_sample <- function(data, weights, replicates = NULL) {
 step_model_calibration <- function(spec, x_formula, models, population,
                                    x_totals = NULL, count = "Freq",
                                    cluster = NULL, equal_within_cluster = FALSE,
+                                   calfun = c("linear", "logit", "raking"),
+                                   bounds = NULL, maxit = 100L, tol = 1e-7,
                                    crossfit = NULL, crossfit_seed = NULL, id = NULL) {
   if (!inherits(spec, "weighting_spec"))
     stop("The first argument must be a weighting_spec.")
   if (missing(x_formula) || missing(models) || missing(population))
     stop("`x_formula`, `models` and `population` are required.")
   if (!inherits(x_formula, "formula")) stop("`x_formula` must be a formula ~ x.")
+  calfun <- match.arg(calfun)
+  # `bounds` on the g-factor, with the same meaning and validation as
+  # step_calibrate(method = "linear"): keeps the final weight in [L, U] * base.
+  if (calfun == "logit" && is.null(bounds))
+    stop("calfun = 'logit' requires `bounds` = c(L, U).", call. = FALSE)
+  if (!is.null(bounds)) {
+    if (!is.numeric(bounds) || length(bounds) != 2L || anyNA(bounds) ||
+        any(!is.finite(bounds)))
+      stop("`bounds` must be a numeric vector c(L, U) of two finite numbers.",
+           call. = FALSE)
+    if (bounds[1] >= 1 || bounds[2] <= 1)
+      stop("`bounds` must be c(L, U) with L < 1 < U.", call. = FALSE)
+  }
+  maxit <- .wf_count(maxit, "maxit", min = 1L)
+  if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) || tol <= 0)
+    stop(sprintf("`tol` must be a single positive finite number; got %s.",
+                 deparse(tol)[1]), call. = FALSE)
   if (!is.list(models) || is.null(names(models)))
     stop("`models` must be a named list of y_model().")
   # Each element must be a y_model() result, not a bare formula (a common slip:
@@ -236,6 +267,10 @@ step_model_calibration <- function(spec, x_formula, models, population,
       count      = count,
       cluster    = cluster,
       equal_within_cluster = equal_within_cluster,
+      calfun     = calfun,
+      bounds     = bounds,
+      maxit      = maxit,
+      tol        = tol,
       crossfit      = if (is.null(crossfit)) NULL else as.integer(crossfit),
       crossfit_seed = crossfit_seed
     ),
@@ -313,7 +348,12 @@ step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
 #'   (default, Q3 + 3*IQR far-out fence) or "potter" (Potter's MSE-optimal cutoff,
 #'   which over a grid of candidate cutoffs minimizes an estimate of bias^2 +
 #'   variance and so balances the bias of trimming against the variance from
-#'   extreme weights). Ignored when `upper` is supplied.
+#'   extreme weights). Ignored when `upper` is supplied. See Details for what the
+#'   Potter criterion assumes.
+#' @param kappa numeric, `method = "potter"` only: the relative price of bias
+#'   against variance in the criterion minimized, `kappa * bias^2 + variance`.
+#'   The default 1 is Potter's own weighting; above 1 the cutoff moves up (trim
+#'   less, keep the bias down), below 1 it moves down (trim more).
 #' @param redistribute how the trimmed mass is shared among the untrimmed units:
 #'   "proportional" (default; in proportion to their weights, preserving relative
 #'   sizes) or "uniform" (an equal amount to each untrimmed unit, and units
@@ -322,6 +362,28 @@ step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
 #'   weight is outside `[lower, upper]` (like survey's strict = TRUE). If FALSE, a
 #'   single pass (redistribution may push some weights slightly past the cap).
 #' @param maxit integer. Maximum iterations when strict = TRUE.
+#' @details Two things are worth knowing about `method = "potter"` before reading
+#'   its cutoff as optimal, because both are assumptions rather than results.
+#'
+#'   The criterion is the mean squared error of a **total**, so its two terms are
+#'   deliberately on different orders: the bias of capping is the trimmed mass,
+#'   which grows like the sample size, and the variance term is the sum of squared
+#'   remaining weights, which also grows like the sample size, so bias squared
+#'   grows like its square. The cutoff therefore **rises with the sample size for
+#'   the same weight distribution** -- replicating a 300-unit sample to 30,000 moved
+#'   it from 126 to 183 in one test, capping a third as many units. That is the
+#'   correct behaviour for a total (the relative bias stays put while the relative
+#'   variance shrinks, so trimming buys less), not a defect, but it does mean the
+#'   rule is not a property of the weight distribution alone. The criterion is
+#'   invariant to the scale of the weights.
+#'
+#'   The bias it charges is the bias of capping **without** redistribution, while
+#'   this step always redistributes: the weighted total is preserved exactly, so the
+#'   real bias is only the difference between the study variable's mean among the
+#'   capped units and among the units receiving their mass. The criterion therefore
+#'   overstates the bias and, other things equal, caps less than the MSE it is
+#'   named after would. `kappa` is the handle: set it below 1 to buy back that
+#'   conservatism.
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_nonresponse(respondent = responded, method = "weighting_class", by = "region") |>
@@ -340,9 +402,14 @@ step_assert <- function(spec, max_deff = NULL, max_weight_ratio = NULL,
 step_trim_weights <- function(spec, lower = 1, upper = NULL,
                               method = c("tukey", "potter"),
                               redistribute = c("proportional", "uniform"),
-                              strict = TRUE, maxit = 50L, id = NULL) {
+                              strict = TRUE, maxit = 50L, kappa = 1, id = NULL) {
   method       <- match.arg(method)
   redistribute <- match.arg(redistribute)
+  if (!is.numeric(kappa) || length(kappa) != 1L || !is.finite(kappa) || kappa <= 0)
+    stop("`kappa` must be a single positive number (1 = Potter's own bias/variance ",
+         "weighting).", call. = FALSE)
+  if (kappa != 1 && !identical(method, "potter"))
+    warning("`kappa` only affects method = \"potter\"; it is ignored here.", call. = FALSE)
   # M3: this step applies a single absolute band to every unit; it has no `by`.
   # A named or length > 1 `lower`/`upper` (e.g. `upper = c(North = 16)`) would be
   # recycled to a scalar and silently applied to everyone. Reject it and point to
@@ -369,7 +436,8 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
       method       = method,
       redistribute = redistribute,
       strict       = strict,
-      maxit        = maxit
+      maxit        = maxit,
+      kappa        = kappa
     ),
     class = c("step_trim_weights", "weighting_step")
   )
@@ -397,15 +465,21 @@ step_trim_weights <- function(spec, lower = 1, upper = NULL,
 #' is too tight to preserve every total, the totals that cannot be met are relaxed
 #' and a warning is raised.
 #'
-#' This step is meant to run **after** a `step_calibrate()`: it acts on the
-#' active incoming weights (including any negative weights an unbounded linear
-#' calibration produced, which it can bring back into `[lower, upper]`) and
-#' leaves dropped units (weight 0) alone.
+#' This step is meant to run **after** a `step_calibrate()` or a
+#' `step_model_calibration()`: it acts on the active incoming weights (including
+#' any negative weights an unbounded linear calibration produced, which it can
+#' bring back into `[lower, upper]`) and leaves dropped units (weight 0) alone.
+#' After a `step_model_calibration()` it preserves both the known-margin totals
+#' and the model-prediction totals: that step saves its prediction columns, which
+#' this step appends to `formula`'s design so the trimmed weights keep every total
+#' the model calibration reproduced (pass the same `x_formula` as `formula`).
 #'
 #' @param spec a weighting_spec.
 #' @param formula the auxiliaries whose calibration totals must be preserved
 #'   (right-hand side only), e.g. `~ region + age_group`. Usually the same
-#'   formula used in the preceding `step_calibrate()`.
+#'   formula used in the preceding `step_calibrate()` (or the `x_formula` of the
+#'   preceding `step_model_calibration()`, whose model-prediction totals are then
+#'   preserved as well).
 #' @param lower,upper numeric. Absolute bounds on the trimmed weight. At least
 #'   one must be supplied; the other defaults to no bound. For positive variance,
 #'   use a positive `lower`. Each may be a single number (the same bound for every

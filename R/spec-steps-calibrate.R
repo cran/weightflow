@@ -416,6 +416,15 @@ step_trim <- function(spec, max_ratio, min_ratio = NULL,
     if (min_ratio <= 0)
       stop(sprintf("`min_ratio` must be greater than 0 (got %s).", format(min_ratio)),
            call. = FALSE)
+    # Symmetric to the max_ratio check: for a RELATIVE reference the floor is a multiple of
+    # the reference weight, so min_ratio >= 1 would raise every weight up to (or above) the
+    # reference and inflate the total. (TRIM-03)
+    if (reference %in% c("base", "median") && min_ratio >= 1)
+      stop(sprintf(paste0("`min_ratio` must be less than 1 for reference = \"%s\" (got %s): ",
+                          "it is a multiple of the reference weight, so a floor at or above 1 ",
+                          "would raise every weight up to the reference and distort the total. ",
+                          "Use reference = \"value\" if you meant an absolute floor."),
+                   reference, format(min_ratio)), call. = FALSE)
   }
   step <- structure(
     list(
@@ -477,16 +486,44 @@ design_effect <- function(w) {
 #' Round the final weights
 #'
 #' Rounds the weights to a given number of decimals, either unit by unit
-#' (`"nearest"`) or with the largest-remainder method (`"preserve_total"`), which
-#' keeps the weighted total exactly. Typically the last step of a recipe, after
+#' (`"nearest"`), with the largest-remainder method (`"preserve_total"`), which
+#' keeps the weighted total exactly, or with the cube method (`"balanced"`), which
+#' keeps the calibrated totals -- by domain, not only the grand total -- as close
+#' as the integer grid allows. Typically the last step of a recipe, after
 #' calibration, when the weights have to be delivered as integers or with a fixed
 #' number of decimals.
 #'
 #' @param spec a weighting_spec.
 #' @param digits integer. Decimals to keep (0 = integers).
-#' @param method "nearest" (simple rounding) or "preserve_total" (keeps the sum
-#'   of weights). Note: "preserve_total" can break equality of weights within a
-#'   cluster; if you need integer and equal weights per household, use "nearest".
+#' @param method one of `"nearest"` (simple rounding), `"preserve_total"`
+#'   (largest remainder; keeps the grand total exactly) or `"balanced"` (cube
+#'   method; keeps the totals of the domains named in `by` as close as the grid
+#'   allows). Note: `"preserve_total"` and `"balanced"` can break equality of
+#'   weights within a cluster; if you need integer and equal weights per
+#'   household, use `"nearest"`.
+#' @param by for `method = "balanced"` only: a character vector of variables
+#'   whose (crossed) cell totals must be preserved, e.g. `by = c("dam",
+#'   "stratum")` -- the same domains you calibrated to. Every weight is sent to
+#'   its floor or ceiling by balanced sampling on the cell indicators (cube
+#'   method), so each cell total (and hence each margin, and the grand total) is
+#'   reproduced up to at most one unit's worth. Required when
+#'   `method = "balanced"`.
+#' @details The `"balanced"` method implements balanced rounding by the cube
+#'   method (Deville and Tille 2004; ECLAC/CEPAL household-survey methodology,
+#'   chapter 9, section F.2) natively, with no external sampling dependency. It is
+#'   randomized: call [set.seed()] before [prep()] for a reproducible result.
+#'
+#'   `"preserve_total"` is randomized too, but only where it has to be. Ties in the
+#'   fractional part are the rule rather than the exception -- a self-weighting
+#'   design, weights that land on `.5`, calibrated weights on a grid -- and they are
+#'   broken at random, so the extra unit is allocated without regard to the order of
+#'   the file. Deciding ties by row order instead moves mass systematically towards
+#'   whatever the file is sorted by, usually region, while the grand total (the one
+#'   thing the method promises) stays exactly right and hides it. Weights whose
+#'   fractional parts are distinct are rounded exactly as before.
+#' @references
+#' Deville J-C, Tille Y (2004). Efficient balanced sampling: the cube method.
+#'   \emph{Biometrika} 91(4):893-912.
 #' @examples
 #' weighting_spec(sample_survey, base_weights = pw) |>
 #'   step_round(digits = 0) |> prep()
@@ -496,18 +533,29 @@ design_effect <- function(w) {
 #' @return The input `weighting_spec` with this step appended to its recipe. The
 #'   step is recorded only; it is evaluated when `prep()` is called.
 #' @family weighting steps
-step_round <- function(spec, digits = 0L, method = c("nearest", "preserve_total"), id = NULL) {
+step_round <- function(spec, digits = 0L,
+                       method = c("nearest", "preserve_total", "balanced"),
+                       by = NULL, id = NULL) {
   method <- match.arg(method)
   if (!is.numeric(digits) || length(digits) != 1L || !is.finite(digits) ||
       digits < 0 || digits != round(digits))
     stop("`digits` must be a single non-negative whole number (e.g. 0 for integers).",
          call. = FALSE)
   digits <- as.integer(digits)
+  if (identical(method, "balanced")) {
+    if (is.null(by) || !is.character(by) || !length(by))
+      stop("step_round(method = \"balanced\") needs `by`, a character vector of the ",
+           "domain variables whose totals must be preserved, e.g. by = c(\"dam\", \"stratum\").",
+           call. = FALSE)
+  } else if (!is.null(by)) {
+    warning("`by` is ignored unless method = \"balanced\".", call. = FALSE)
+  }
   step <- structure(
     list(
       label  = sprintf("rounding (%s, %d decimals)", method, digits),
       digits = digits,
-      method = method
+      method = method,
+      by     = if (identical(method, "balanced")) by else NULL
     ),
     class = c("step_round", "weighting_step")
   )

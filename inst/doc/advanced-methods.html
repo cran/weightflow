@@ -425,7 +425,7 @@ data:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">in_sample =</span> <span class="fu">design_effect</span>(<span class="fu">collect_weights</span>(fit_boost)<span class="sc">$</span>.weight)<span class="sc">$</span>deff,</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="at">crossfit  =</span> <span class="fu">design_effect</span>(<span class="fu">collect_weights</span>(fit_cf)<span class="sc">$</span>.weight)<span class="sc">$</span>deff)</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; in_sample  crossfit </span></span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;  2.393923  1.491576</span></span></code></pre></div>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;  1.702181  1.458120</span></span></code></pre></div>
 <p>In-sample boosting overfits and inflates the design effect;
 cross-fitting removes that in-sample optimism and brings it back down.
 The out-of-sample propensities are also smoother, so the quantile-based

@@ -639,7 +639,7 @@ variance inflation:</p>
 <span id="cb4-99"><a href="#cb4-99" tabindex="-1"></a><span class="co">#&gt; (converged/iterated in 4 iterations)</span></span>
 <span id="cb4-100"><a href="#cb4-100" tabindex="-1"></a><span class="co">#&gt; Kish deff: 1.510 -&gt; 1.548   |   n_eff: 138 -&gt; 135</span></span>
 <span id="cb4-101"><a href="#cb4-101" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-102"><a href="#cb4-102" tabindex="-1"></a><span class="co">#&gt; R-indicator (representativity of response): 0.802  (on region, sex, age_grp)</span></span></code></pre></div>
+<span id="cb4-102"><a href="#cb4-102" tabindex="-1"></a><span class="co">#&gt; R-indicator (representativity of response): 0.887  (on region, sex, age_grp)</span></span></code></pre></div>
 <p>And the effect of trimming on the final design effect:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">no_trim =</span> <span class="fu">design_effect</span>(fitted<span class="sc">$</span>final_weight)<span class="sc">$</span>deff,</span>
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">trimmed =</span> <span class="fu">design_effect</span>(trimmed<span class="sc">$</span>final_weight)<span class="sc">$</span>deff)</span>

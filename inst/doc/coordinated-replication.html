@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Coordinated replication: what travels between waves</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Coordinated replication: what travels
+between waves</h1>
+
+
+
+<p>A rotating panel measures part of the same sample twice. That shared
+part is what makes a <strong>change</strong> more precise than the two
+levels it is built from – and it is also what makes the change harder to
+estimate, because the two samples are not independent. With replication,
+the covariance is not something you compute from a formula: it is
+something the replicates either carry or lose. This article is about the
+mechanism that carries it, so that <code>$strata</code> can be read as
+the quality indicator it is meant to be.</p>
+<div id="what-has-to-travel" class="section level2">
+<h2>What has to travel</h2>
+<p>In a rescaling bootstrap each replicate draws, for every stratum, how
+many times each PSU is selected – its <strong>multiplicity</strong>
+<code>c_hi</code> – and turns it into the replicate factor</p>
+<p><span class="math display">\[\lambda_{hi} = 1 - a_h + a_h
+\frac{n_h}{m_h} c_{hi}, \qquad a_h = \sqrt{\frac{m_h}{n_h -
+1}}.\]</span></p>
+<p>For replicate <em>b</em> of period <em>t</em> to be comparable with
+replicate <em>b</em> of period <em>t-1</em>, a PSU present in both must
+be resampled <strong>the same way</strong> in both. So what travels
+between periods is the multiplicity matrix itself, not the random seed
+and not the uniforms behind it.</p>
+<p>The distinction matters. Re-drawing period <em>t</em> from a stored
+uniform looks equivalent and is not: the exact multinomial draw is a
+joint constraint over the whole stratum (the multiplicities must add up
+to <code>m_h</code>), so re-drawing cannot both keep the stratum total
+right <em>and</em> give every shared PSU exactly the multiplicity it
+had. Transferring the integers does both. This is the Statistics Canada
+LFS procedure (cat. 71-526-X, sec. 7.2.2, after Roberts, Kovacevic,
+Mantel and Phillips 2001), and it is what <code>wave_step()</code>
+implements.</p>
+</div>
+<div id="the-four-cases" class="section level2">
+<h2>The four cases</h2>
+<p>Which of these applies is decided by the stratum, not by the design
+as a whole, and it is decided anew every period:</p>
+<table>
+<colgroup>
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>case</th>
+<th>situation</th>
+<th>what happens</th>
+<th>exact?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>i</strong></td>
+<td>the stratum keeps exactly its PSUs</td>
+<td>each PSU inherits its own multiplicity</td>
+<td>yes</td>
+</tr>
+<tr class="even">
+<td><strong>ii</strong></td>
+<td>some PSUs rotate out and as many rotate in, <code>n_h</code>
+unchanged</td>
+<td>each incoming PSU is paired with an outgoing one and inherits its
+multiplicity: a permutation</td>
+<td>yes</td>
+</tr>
+<tr class="odd">
+<td><strong>iii</strong></td>
+<td>the stratum has <strong>fewer</strong> PSUs than before</td>
+<td>the transfer leaves the column short, and multiplicity is added at
+random until it closes on <code>m_h</code></td>
+<td>no</td>
+</tr>
+<tr class="even">
+<td><strong>iv</strong></td>
+<td>the stratum has <strong>more</strong> PSUs than before</td>
+<td>the column overshoots, and multiplicity is dropped at random</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<p>Cases i and ii preserve two things at once: the stratum total stays
+exactly <code>m_h</code>, so the replicate is a valid Rao-Wu replicate,
+and every shared PSU keeps exactly its resampling, so the covariance is
+transmitted intact. Cases iii and iv can only preserve the first, so
+some replicates have to be adjusted and the coordination becomes
+approximate.</p>
+<p>Two labels are not cases: <code>fresh</code> (the first period of a
+chain – there is nothing to coordinate with) and <code>singleton</code>
+(a stratum with one PSU, which has no within-stratum variance to
+resample).</p>
+</div>
+<div id="reading-strata" class="section level2">
+<h2>Reading <code>$strata</code></h2>
+<p>A rotating design with four strata, five PSUs each, two of which are
+replaced between waves:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">11</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>mk <span class="ot">&lt;-</span> <span class="cf">function</span>(psus, <span class="at">shift =</span> <span class="dv">0</span>) {</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>  <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(psus, <span class="cf">function</span>(k) {</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>    <span class="fu">data.frame</span>(<span class="at">stratum =</span> (k <span class="sc">-</span> <span class="dv">1</span><span class="dt">L</span>) <span class="sc">%/%</span> <span class="dv">100</span><span class="dt">L</span>, <span class="at">psu =</span> k, <span class="at">w =</span> <span class="dv">20</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>               <span class="at">y =</span> <span class="fu">rnorm</span>(<span class="dv">8</span>, <span class="dv">10</span> <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> ((k <span class="sc">%%</span> <span class="dv">7</span>) <span class="sc">-</span> <span class="dv">3</span>) <span class="sc">+</span> shift, <span class="dv">2</span>))</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  }))</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>}</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>w1 <span class="ot">&lt;-</span> <span class="fu">mk</span>(<span class="fu">unlist</span>(<span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(h) h <span class="sc">*</span> <span class="dv">100</span><span class="dt">L</span> <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>)))              <span class="co"># PSUs 1-5</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>w2 <span class="ot">&lt;-</span> <span class="fu">mk</span>(<span class="fu">unlist</span>(<span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(h) h <span class="sc">*</span> <span class="dv">100</span><span class="dt">L</span> <span class="sc">+</span> <span class="fu">c</span>(<span class="dv">3</span><span class="sc">:</span><span class="dv">5</span>, <span class="dv">6</span><span class="sc">:</span><span class="dv">7</span>))), <span class="fl">0.5</span>) <span class="co"># 3-7: rotates 2 of 5</span></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>w3 <span class="ot">&lt;-</span> <span class="fu">mk</span>(<span class="fu">unlist</span>(<span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>, <span class="cf">function</span>(h) h <span class="sc">*</span> <span class="dv">100</span><span class="dt">L</span> <span class="sc">+</span> <span class="fu">c</span>(<span class="dv">5</span><span class="sc">:</span><span class="dv">7</span>, <span class="dv">8</span>))), <span class="dv">1</span>)     <span class="co"># 5-8: only 4 left</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>sp  <span class="ot">&lt;-</span> <span class="cf">function</span>(d) <span class="fu">weighting_spec</span>(d, <span class="at">base_weights =</span> w)</span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a>EST <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">mean_y =</span> <span class="cf">function</span>(w, d) <span class="fu">weighted.mean</span>(d<span class="sc">$</span>y, w))</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>t1 <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(<span class="fu">sp</span>(w1), <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">300</span>, <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>,</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>                <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="st">&quot;T1&quot;</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>k1 <span class="ot">&lt;-</span> <span class="fu">wave_carry</span>(t1)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>t2 <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(<span class="fu">sp</span>(w2), <span class="at">previous =</span> k1, <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">300</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>                <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="st">&quot;T2&quot;</span>, <span class="at">seed =</span> <span class="dv">2</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>t2<span class="sc">$</span>strata</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;   stratum n_psu inherited fresh case coordinated</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; 1       1     5         3     2   ii           1</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; 2       2     5         3     2   ii           1</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; 3       3     5         3     2   ii           1</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; 4       4     5         3     2   ii           1</span></span></code></pre></div>
+<p>Five PSUs before, five after, three of them shared: <strong>case
+ii</strong>, and <code>coordinated = 1</code> – every one of the 300
+replicates closed without adjustment. That column is the quality
+indicator. It is the share of replicates in which the transferred
+multiplicities already summed to <code>m_h</code>, so nothing had to be
+added or dropped at random. At 1 the coordination is exact and the
+reported covariance is the design’s; below 1, that fraction of
+replicates has been perturbed.</p>
+<p>Now let the third wave lose a PSU per stratum:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>k2 <span class="ot">&lt;-</span> <span class="fu">wave_carry</span>(t2)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>t3 <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(<span class="fu">sp</span>(w3), <span class="at">previous =</span> <span class="fu">list</span>(k2, k1), <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">300</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="st">&quot;T3&quot;</span>, <span class="at">seed =</span> <span class="dv">3</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>t3<span class="sc">$</span>strata</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   stratum n_psu inherited fresh case coordinated</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1       1     4         3     1  iii   0.4166667</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; 2       2     4         3     1  iii   0.4133333</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; 3       3     4         3     1  iii   0.4233333</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; 4       4     4         3     1  iii   0.4233333</span></span></code></pre></div>
+<p><strong>Case iii</strong>, and <code>coordinated</code> falls to
+about 0.42: in roughly three of every five replicates the transferred
+column came up short of <code>m_h</code> and had to be topped up at
+random. The estimate is still usable – this is a nuisance, not a failure
+– but it is no longer exact, and a figure whose <code>coordinated</code>
+column sits near zero is one to report with that caveat, or to fix
+upstream by keeping the stratum’s PSU count stable across waves.</p>
+</div>
+<div id="the-covariance-is-the-pairing" class="section level2">
+<h2>The covariance <em>is</em> the pairing</h2>
+<p>The claim that coordination transmits the covariance can be verified
+in one line. The carry stores the <code>R</code> replicate values of
+every declared estimand, so the correlation between the two periods’
+replicate vectors should be exactly the <code>rho</code> reported for
+the change:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">cor_replicates =</span> <span class="fu">cor</span>(k1<span class="sc">$</span>theta<span class="sc">$</span>mean_y, k2<span class="sc">$</span>theta<span class="sc">$</span>mean_y),</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="at">rho_reported   =</span> t2<span class="sc">$</span>change<span class="sc">$</span>rho)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; cor_replicates   rho_reported </span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;      0.6216396      0.6215412</span></span></code></pre></div>
+<p>They agree to three decimals. The two are not literally the same
+arithmetic – <code>$change</code> centres the replicates on the point
+estimate and divides by <code>R</code>, while <code>cor()</code> centres
+on the replicate mean and divides by <code>R - 1</code> – but they are
+two readings of the same alignment, and nothing else in the run produces
+it. The pairing is the whole of it – destroy the alignment and the
+covariance goes with it, even though both vectors are untouched as
+sets:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">4</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">cor</span>(k1<span class="sc">$</span>theta<span class="sc">$</span>mean_y, <span class="fu">sample</span>(k2<span class="sc">$</span>theta<span class="sc">$</span>mean_y))</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt; [1] -0.02947148</span></span></code></pre></div>
+<p>That is the reason the variance of a change cannot be recovered after
+the fact from two independently produced sets of replicate weights,
+however carefully each was built. It has to be arranged while the second
+set is drawn.</p>
+</div>
+<div id="previous-is-a-list-and-the-lag-is-a-design-property" class="section level2">
+<h2><code>previous</code> is a list, and the lag is a design
+property</h2>
+<p><code>wave_step()</code> takes a <strong>list</strong> of carries
+because which earlier periods share sample with this one is decided by
+the rotation calendar, not by proximity. A 6-consecutive design overlaps
+at lags 1 to 5; a <code>4-8-4</code> design overlaps at lags 1-3 and
+again at 9-15; a <code>1(2)5</code> design shares nothing at all with
+the adjacent quarter. Each PSU inherits from the <strong>most
+recent</strong> carry that contains it, so gaps and returning cohorts
+resolve themselves and no window parameter is needed. Supply every carry
+whose period shares sample with this one; <code>panel_design()</code>
+prints the overlap profile that tells you which those are.</p>
+<p>The third wave above was given both earlier carries, so it reports a
+change against each, with the correlation decaying as the overlap
+thins:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>t3<span class="sc">$</span>change[, <span class="fu">c</span>(<span class="st">&quot;from&quot;</span>, <span class="st">&quot;to&quot;</span>, <span class="st">&quot;estimate&quot;</span>, <span class="st">&quot;se&quot;</span>, <span class="st">&quot;rho&quot;</span>, <span class="st">&quot;deff_change&quot;</span>)]</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="co">#&gt;   from to    estimate      se        rho deff_change</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="co">#&gt; 1   T2 T3 -0.03451029 1.00714 0.44012924   0.5667445</span></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; 2   T1 T3  0.40947474 1.34313 0.05785729   0.9424303</span></span></code></pre></div>
+<p><code>deff_change</code> is <code>V / (V1 + V2)</code>: what the
+overlap saved relative to treating the two periods as independent
+samples. Note that ignoring the overlap is not conservative – it is
+simply wrong, and in which direction depends on the sign of the
+covariance.</p>
+</div>
+<div id="what-coordination-does-not-touch" class="section level2">
+<h2>What coordination does not touch</h2>
+<p>The published cross-sectional weights. <code>t2$weights</code> is
+identical to <code>prep(spec)$final_weight</code>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">identical</span>(t2<span class="sc">$</span>weights, <span class="fu">prep</span>(<span class="fu">sp</span>(w2))<span class="sc">$</span>final_weight)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>Coordination adds the change, the diagnostics and the carry. It never
+moves the point estimate the office publishes, which is what makes it
+safe to add to a production run that already exists.</p>
+</div>
+<div id="where-to-look-next" class="section level2">
+<h2>Where to look next</h2>
+<p><code>?wave_step</code> and <code>?wave_carry</code> for the chaining
+engine, <code>?wave_contrast</code> for linear combinations over a chain
+(a rolling quarter, an annual average), <code>?panel_design</code> for
+the rotation calendar and the overlap profile it implies, and
+<code>vignette(&quot;rotating-panels&quot;)</code> for the production workflow
+these pieces serve. The agreement of the resulting change variance with
+an analytic estimator from a different family is checked in
+<code>vignette(&quot;validation&quot;)</code>.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

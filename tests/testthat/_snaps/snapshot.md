@@ -70,7 +70,7 @@
       (converged/iterated in 5 iterations)
       Kish deff: 1.029 -> 1.054   |   n_eff: 262 -> 256
       
-      R-indicator (representativity of response): 0.890  (on region, sex)
+      R-indicator (representativity of response): 0.938  (on region, sex)
 
 # design_effect() output is stable
 

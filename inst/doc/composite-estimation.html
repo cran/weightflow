@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Composite estimation: borrowing strength from the previous wave</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Composite estimation: borrowing strength
+from the previous wave</h1>
+
+
+
+<p>In a rotating panel most of this month’s sample was also in last
+month’s. The <strong>composite estimator</strong> uses that: it adds the
+previous wave’s labour status to the calibration as an auxiliary
+variable, with control totals taken from the previous wave’s own
+composite estimates. The result is a level series that is smoother and,
+much more to the point, a <strong>change</strong> measured far more
+precisely – because the estimator is partly built from the same units
+twice.</p>
+<p><code>step_cre()</code> implements the regression composite estimator
+of Fuller and Rao (2001) and Gambino, Kennedy and Singh (2001), in the
+form specified for the Canadian Labour Force Survey (Statistics Canada,
+cat. 71-526-X, sec. 6.3.1) and used by Uruguay’s ECH (sec. 8.4). This
+article states that form, maps it onto the arguments of
+<code>step_cre()</code>, measures what it buys, and explains the one
+thing that makes its variance a special case.</p>
+<div id="the-estimator" class="section level2">
+<h2>The estimator</h2>
+<p>Start from the nonresponse-adjusted weights <span class="math inline">\(w_l^{NA}\)</span> – whatever the recipe produced
+up to this step. Composite calibration looks for final weights <span class="math inline">\(w_l^{CC}\)</span> as close as possible to those,
+in the chi-square distance</p>
+<p><span class="math display">\[\min_{w^{CC}} \; \sum_{l \in s_r}
+\frac{\left(w_l^{CC} - w_l^{NA}\right)^2}{w_l^{NA}}\]</span></p>
+<p>subject to <strong>two</strong> blocks of constraints rather than the
+usual one:</p>
+<p><span class="math display">\[\sum_{l \in s_r} w_l^{CC}
+\begin{pmatrix} \mathbf{x}_l \\ \mathbf{z}_{\bullet l} \end{pmatrix} =
+\begin{pmatrix} \mathbf{X} \\ \widehat{\mathbf{Z}}
+\end{pmatrix}\]</span></p>
+<p>The upper block is ordinary calibration: <span class="math inline">\(\mathbf{x}_l\)</span> are the demographic
+auxiliaries and <span class="math inline">\(\mathbf{X}\)</span> their
+<strong>known</strong> population totals (census projections). The lower
+block is what makes the estimator composite: <span class="math inline">\(\mathbf{z}_{\bullet l}\)</span> are indicators of
+the <em>previous</em> wave’s labour status and <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> are their totals
+<strong>estimated from the previous wave</strong>. The solution is the
+familiar GREG form,</p>
+<p><span class="math display">\[w_l^{CC} = w_l^{NA} g_l^{CC}, \qquad
+g_l^{CC} = \left(\mathbf{x}_l&#39;, \mathbf{z}_{\bullet l}&#39;\right)
+\left[\sum_{l \in s_r} w_l^{NA} \begin{pmatrix} \mathbf{x}_l \\
+\mathbf{z}_{\bullet l}\end{pmatrix}\left(\mathbf{x}_l&#39;,
+\mathbf{z}_{\bullet l}&#39;\right)\right]^{-1} \begin{pmatrix}
+\mathbf{X} \\ \widehat{\mathbf{Z}} \end{pmatrix}\]</span></p>
+<p>with <span class="math inline">\(g_l^{CC}\)</span> near 1 when the
+sample already reproduces both blocks.</p>
+</div>
+<div id="the-birth-rotation-group-and-why-there-are-two-imputations" class="section level2">
+<h2>The birth rotation group, and why there are two imputations</h2>
+<p><span class="math inline">\(\mathbf{z}_{\bullet l}\)</span> is not
+observed for everyone: the units that entered the sample this wave – the
+<strong>birth rotation group</strong> <span class="math inline">\(s_r^b\)</span> – have no previous month. Their
+values have to be imputed, and the LFS methodology uses <em>two</em>
+imputations because they are efficient for two different things.</p>
+<p><strong>MR1, mean imputation</strong>, is efficient for the
+<strong>level</strong> at month <span class="math inline">\(t\)</span>:</p>
+<p><span class="math display">\[\mathbf{z}_{\bullet l}^{(1)} =
+\begin{cases} \mathbf{z}_{t-1,l} &amp; l \in s_r - s_r^b \\
+\widehat{\mathbf{Z}} / N_{15+} &amp; l \in s_r^b
+\end{cases}\]</span></p>
+<p><strong>MR2, carry-backward imputation</strong>, is efficient for the
+<strong>difference</strong> between two successive months. The birth
+group carries its current value backwards, and the non-birth groups are
+corrected for the change that this erases:</p>
+<p><span class="math display">\[\mathbf{z}_{\bullet l}^{(2)} =
+\begin{cases} \mathbf{z}_{t-1,l} + \left(\delta_l^{-1} -
+1\right)\left(\mathbf{z}_{t-1,l} - \mathbf{z}_{t,l}\right) &amp; l \in
+s_r - s_r^b \\ \mathbf{z}_{t,l} &amp; l \in s_r^b
+\end{cases}\]</span></p>
+<p>Here <span class="math inline">\(\delta_l\)</span> is the probability
+of <em>not</em> being in the birth group – the overlap rate, <span class="math inline">\(5/6\)</span> in a six-month rotation – estimated
+from the weights themselves as <span class="math inline">\(\hat\delta =
+\sum_{s_r - s_r^b} w_l^{NA} \big/ \sum_{s_r} w_l^{NA}\)</span>. The
+correction factor <span class="math inline">\(\delta^{-1} - 1\)</span>
+is what preserves asymptotic unbiasedness: without it, carry-backward
+would quietly remove one sixth of the month-to-month change.</p>
+<p>Neither is used alone. The composite auxiliaries are the mix</p>
+<p><span class="math display">\[\mathbf{z}_{\bullet l} = (1 -
+\alpha)\,\mathbf{z}_{\bullet l}^{(1)} + \alpha\,\mathbf{z}_{\bullet
+l}^{(2)}, \qquad \alpha = 2/3\]</span></p>
+<p>with <span class="math inline">\(\alpha\)</span> a tuning constant:
+<span class="math inline">\(\alpha = 0\)</span> targets the level alone,
+<span class="math inline">\(\alpha = 1\)</span> the change alone. Both
+the LFS and the ECH use <span class="math inline">\(2/3\)</span>,
+following the study of Chen and Liu (2002).</p>
+<div id="where-each-symbol-lives-in-the-call" class="section level3">
+<h3>Where each symbol lives in the call</h3>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>symbol</th>
+<th>argument</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(w_l^{NA}\)</span></td>
+<td>—</td>
+<td>whatever the recipe produced before this step</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\mathbf{x}_l\)</span>, <span class="math inline">\(\mathbf{X}\)</span></td>
+<td><code>formula</code>, <code>totals</code></td>
+<td>as in <code>step_calibrate(method = &quot;linear&quot;)</code></td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\mathbf{z}_{\bullet l}\)</span></td>
+<td><code>status</code>, <code>composite</code></td>
+<td>status indicators, crossed by the domains in
+<code>composite</code></td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\widehat{\mathbf{Z}}\)</span></td>
+<td><code>previous</code></td>
+<td>re-estimated from the prepped previous wave</td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\alpha\)</span></td>
+<td><code>alpha</code></td>
+<td>default <code>2/3</code></td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\delta\)</span></td>
+<td><code>overlap</code></td>
+<td><code>&quot;auto&quot;</code> estimates <span class="math inline">\(\hat\delta\)</span> from the weights; or give it
+(e.g. <code>5/6</code>)</td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(s_r^b\)</span></td>
+<td><code>birth</code>, <code>id_unit</code></td>
+<td>the birth group, named or derived by unit key</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(N/G\)</span></td>
+<td><code>rotation_group</code></td>
+<td>equal-representation constraints, see below</td>
+</tr>
+</tbody>
+</table>
+<p><code>composite</code> is the list of domain crossings that define
+the blocks of <span class="math inline">\(\widehat{\mathbf{Z}}\)</span>:
+<code>NULL</code> is the country total, <code>&quot;sex&quot;</code> is status
+crossed by sex, a character vector is status crossed by the interaction.
+The ECH’s own list is <code>list(NULL, &quot;sex&quot;, &quot;department&quot;)</code>.
+<code>status_ref</code> names the status level left implicit in each
+block – one level must always be dropped, or the block is collinear with
+the intercept of <span class="math inline">\(\mathbf{x}\)</span>; naming
+it only decides which.</p>
+<p>Units that are neither birth nor matched – new household members,
+people newly of working age, people out of scope last month – are
+handled by <code>on_missing_prev</code>: <code>&quot;carry_backward&quot;</code>
+sets <span class="math inline">\(\mathbf{z}_{t-1} =
+\mathbf{z}_t\)</span>, <code>&quot;zero&quot;</code> sets <span class="math inline">\(\mathbf{z}_{\bullet l} = \mathbf{0}\)</span>,
+which is what the LFS does for the out-of-scope (Gambino, Kennedy and
+Singh 2001).</p>
+</div>
+</div>
+<div id="the-recursion" class="section level2">
+<h2>The recursion</h2>
+<p>The estimator is defined recursively, so a chain needs a starting
+point. The <strong>seed</strong> wave has no <span class="math inline">\(t-1\)</span>: with <code>previous = NULL</code>
+the composite block is empty and <code>step_cre()</code> reduces to an
+ordinary linear calibration to <span class="math inline">\(\mathbf{X}\)</span>. From the second wave on,
+<code>previous</code> is the prepped recipe of the wave before.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>wv <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>, <span class="cf">function</span>(k) {</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  d <span class="ot">&lt;-</span> <span class="fu">subset</span>(panel_ine, wave <span class="sc">==</span> k <span class="sc">&amp;</span> disposition <span class="sc">==</span> <span class="st">&quot;R&quot;</span>); d<span class="sc">$</span>sex <span class="ot">&lt;-</span> <span class="fu">factor</span>(d<span class="sc">$</span>sex); d</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>})</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>Xtot <span class="ot">&lt;-</span> <span class="cf">function</span>(d) <span class="fu">colSums</span>(d<span class="sc">$</span>pw <span class="sc">*</span> <span class="fu">model.matrix</span>(<span class="sc">~</span> sex, <span class="at">data =</span> d))</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>seed <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wv[[<span class="dv">1</span>]], <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="fu">step_cre</span>(<span class="at">previous =</span> <span class="cn">NULL</span>, <span class="at">status =</span> lf_status, <span class="at">formula =</span> <span class="sc">~</span> sex,</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>           <span class="at">totals =</span> <span class="fu">Xtot</span>(wv[[<span class="dv">1</span>]]), <span class="at">status_ref =</span> <span class="st">&quot;inact&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>wave2 <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wv[[<span class="dv">2</span>]], <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>  <span class="fu">step_cre</span>(<span class="at">previous =</span> seed, <span class="at">status =</span> lf_status, <span class="at">composite =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="st">&quot;sex&quot;</span>),</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>           <span class="at">id_unit =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">formula =</span> <span class="sc">~</span> sex,</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>           <span class="at">totals =</span> <span class="fu">Xtot</span>(wv[[<span class="dv">2</span>]]), <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">status_ref =</span> <span class="st">&quot;inact&quot;</span>)</span></code></pre></div>
+</div>
+<div id="what-it-buys" class="section level2">
+<h2>What it buys</h2>
+<p>The comparison worth making is against the same recipe with an
+ordinary calibration, over the same chain, with the same replicates:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>EST <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">unemp_rate =</span> <span class="cf">function</span>(w, d) <span class="fu">weighted.mean</span>(d<span class="sc">$</span>unemployed, w, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>run <span class="ot">&lt;-</span> <span class="cf">function</span>(composite) {</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; out <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>    sp <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wv[[k]], <span class="at">base_weights =</span> pw)</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>    sp <span class="ot">&lt;-</span> <span class="cf">if</span> (composite)</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>      <span class="fu">step_cre</span>(sp, <span class="at">previous =</span> <span class="cf">if</span> (k <span class="sc">==</span> <span class="dv">1</span>) <span class="cn">NULL</span> <span class="cf">else</span> out[[k <span class="sc">-</span> <span class="dv">1</span>]]<span class="sc">$</span>prepped,</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>               <span class="at">status =</span> lf_status, <span class="at">composite =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="st">&quot;sex&quot;</span>),</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>               <span class="at">id_unit =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">formula =</span> <span class="sc">~</span> sex,</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>               <span class="at">totals =</span> <span class="fu">Xtot</span>(wv[[k]]), <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">status_ref =</span> <span class="st">&quot;inact&quot;</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>    <span class="cf">else</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>      <span class="fu">step_calibrate</span>(sp, <span class="at">method =</span> <span class="st">&quot;linear&quot;</span>, <span class="at">formula =</span> <span class="sc">~</span> sex, <span class="at">totals =</span> <span class="fu">Xtot</span>(wv[[k]]))</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>    s <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(sp, <span class="at">previous =</span> prev, <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">150</span>,</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>                   <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="fu">paste0</span>(<span class="st">&quot;T&quot;</span>, k),</span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>                   <span class="at">seed =</span> <span class="dv">100</span> <span class="sc">+</span> k, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>    out[[k]] <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">step =</span> s, <span class="at">carry =</span> <span class="fu">wave_carry</span>(s), <span class="at">prepped =</span> <span class="fu">prep</span>(sp))</span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>    prev <span class="ot">&lt;-</span> <span class="fu">rev</span>(<span class="fu">lapply</span>(out, <span class="cf">function</span>(z) z<span class="sc">$</span>carry))</span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  }</span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>  out</span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>}</span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>cre   <span class="ot">&lt;-</span> <span class="fu">run</span>(<span class="cn">TRUE</span>)</span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>plain <span class="ot">&lt;-</span> <span class="fu">run</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a></span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>tab <span class="ot">&lt;-</span> <span class="cf">function</span>(o, label) {</span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a>  ch <span class="ot">&lt;-</span> o[[<span class="dv">3</span>]]<span class="sc">$</span>step<span class="sc">$</span>change</span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">recipe =</span> label, <span class="at">from =</span> ch<span class="sc">$</span>from, <span class="at">se =</span> <span class="fu">round</span>(ch<span class="sc">$</span>se, <span class="dv">5</span>),</span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a>             <span class="at">rho =</span> <span class="fu">round</span>(ch<span class="sc">$</span>rho, <span class="dv">3</span>), <span class="at">deff_change =</span> <span class="fu">round</span>(ch<span class="sc">$</span>deff_change, <span class="dv">3</span>))</span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a>}</span>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="fu">rbind</span>(<span class="fu">tab</span>(cre, <span class="st">&quot;composite (CRE)&quot;</span>), <span class="fu">tab</span>(plain, <span class="st">&quot;plain calibration&quot;</span>))</span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt;              recipe from      se   rho deff_change</span></span>
+<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt; 1   composite (CRE)   T2 0.00700 0.855       0.149</span></span>
+<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt; 2   composite (CRE)   T1 0.00919 0.708       0.292</span></span>
+<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a><span class="co">#&gt; 3 plain calibration   T2 0.01087 0.619       0.381</span></span>
+<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co">#&gt; 4 plain calibration   T1 0.01257 0.460       0.540</span></span></code></pre></div>
+<p>Against the previous month the standard error of the change falls by
+about a third, and the correlation between the two periods’ estimates
+rises from roughly 0.6 to roughly 0.85. That is the whole point: the
+composite auxiliaries make consecutive estimates share more of their
+sampling error, and shared error cancels in a difference. Statistics
+Canada reports the same qualitative result – composite estimation
+“significantly reduces the sampling errors” of the LFS (cat. 71-526-X,
+ch. 8).</p>
+<p>It is not free. The level at period <span class="math inline">\(t\)</span> now depends on the previous wave’s
+estimates, so an error propagates forward and the series is smoother
+than the data alone would justify. That is why <span class="math inline">\(\alpha\)</span> exists and why neither agency sets
+it to 1.</p>
+</div>
+<div id="the-variance-trap" class="section level2">
+<h2>The variance trap</h2>
+<p>Here is what makes <code>step_cre()</code> different from every other
+step. Its control totals <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> are <strong>not
+known population figures</strong>. They are <em>estimated</em> from the
+previous wave, with the previous wave’s weights, and they carry that
+wave’s sampling error.</p>
+<p>A single-sample bootstrap does not know this. It resamples the
+current wave and re-runs the recipe, but <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> was computed once,
+from the previous wave’s frozen point weights, so every replicate
+calibrates to the <em>same</em> control totals – as if they were census
+figures. Writing the change as</p>
+<p><span class="math display">\[V(\hat\theta_t - \hat\theta_{t-1}) =
+V(\hat\theta_t) + V(\hat\theta_{t-1}) - 2\,\mathrm{Cov}(\hat\theta_t,
+\hat\theta_{t-1})\]</span></p>
+<p>the single-sample engine gets the first term wrong <em>and</em> has
+no way to produce the third. The result is too small, and too small in
+precisely the direction that matters. The package refuses to let this
+happen quietly:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(<span class="fu">bootstrap_weights</span>(wave2, <span class="at">replicates =</span> <span class="dv">5</span>, <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>,</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>                                <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>),</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>              <span class="at">warning =</span> <span class="cf">function</span>(w) <span class="fu">conditionMessage</span>(w))</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>b</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; [1] &quot;bootstrap_weights(): the recipe contains step_cre() (composite regression). This single-sample bootstrap treats the composite control totals Zhat as FIXED, so it understates the variance. Use wave_bootstrap() for the coordinated, honest variance of the recursive composite estimator.&quot;</span></span></code></pre></div>
+<p>The honest version re-estimates <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> inside every
+replicate: replicate <span class="math inline">\(b\)</span> of period
+<span class="math inline">\(t\)</span> rebuilds its control totals from
+replicate <span class="math inline">\(b\)</span> of period <span class="math inline">\(t-1\)</span>. That is what
+<code>wave_step()</code> and <code>wave_bootstrap()</code> do, and it is
+the reason a chain containing <code>step_cre()</code> needs the previous
+period’s <strong>replicate weights</strong>, not just its replicate
+estimates.</p>
+</div>
+<div id="the-fat-carry" class="section level2">
+<h2>The fat carry</h2>
+<p>Hence the two shapes of the carry. <code>carry = &quot;auto&quot;</code>, the
+default, inspects the recipe: with no <code>step_cre()</code> it stores
+only the replicate values of the declared estimands; with one, it stores
+the <span class="math inline">\(R \times n\)</span> matrix of replicate
+weights as well.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">thin_KB =</span> <span class="fu">as.numeric</span>(<span class="fu">object.size</span>(plain[[<span class="dv">1</span>]]<span class="sc">$</span>carry)) <span class="sc">/</span> <span class="dv">1024</span>,</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">fat_KB  =</span> <span class="fu">as.numeric</span>(<span class="fu">object.size</span>(cre[[<span class="dv">1</span>]]<span class="sc">$</span>carry))   <span class="sc">/</span> <span class="dv">1024</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;    thin_KB     fat_KB </span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt;   85.88281 2614.19531</span></span></code></pre></div>
+<p>Thirty times larger, and the difference is entirely that matrix. For
+a monthly production chain it is a few megabytes per period – the price
+of an honest variance for the composite estimator.</p>
+<p>The injection is audited, so you can confirm it happened rather than
+assume it:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">c</span>(<span class="at">injected =</span> cre[[<span class="dv">2</span>]]<span class="sc">$</span>step<span class="sc">$</span>n_cre_injected, <span class="at">skipped =</span> cre[[<span class="dv">2</span>]]<span class="sc">$</span>step<span class="sc">$</span>n_cre_skipped)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="co">#&gt; injected  skipped </span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="co">#&gt;        1        0</span></span></code></pre></div>
+<p><code>n_cre_injected</code> counts the CRE steps that received the
+previous period’s replicate weights; <code>n_cre_skipped</code> those
+that did not, because no carry contained them or the carry was thin. A
+chain running with <code>skipped &gt; 0</code> is producing exactly the
+anticonservative variance the warning above is about, and the number is
+there so a production run can assert on it.</p>
+</div>
+<div id="equal-representation-across-rotation-groups" class="section level2">
+<h2>Equal representation across rotation groups</h2>
+<p>Both methodologies impose one more constraint: each rotation group
+must weight to the same working-age total,</p>
+<p><span class="math display">\[\sum_{l \in s_g} w_l^{CC} =
+\frac{N_{15+}}{G}, \qquad g = 1, \dots, G-1\]</span></p>
+<p>(ECH sec. 8.4.1; LFS sec. 6.3.1, “additional control totals are used
+to ensure that the estimated number of people aged 15 and over is the
+same for each rotation group”). Passing <code>rotation_group</code> adds
+it as <span class="math inline">\(G-1\)</span> extra columns in the
+demographic block – the last group’s total follows from the others and
+<span class="math inline">\(N_{15+}\)</span>, so constraining it too
+would be redundant.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">step_cre</span>(spec, <span class="at">previous =</span> seed, <span class="at">status =</span> lf_status, <span class="at">composite =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="st">&quot;sex&quot;</span>),</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>         <span class="at">id_unit =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">formula =</span> <span class="sc">~</span> sex,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>         <span class="at">totals =</span> <span class="fu">Xtot</span>(wv[[<span class="dv">2</span>]]), <span class="at">rotation_group =</span> <span class="st">&quot;rotation_group&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>         <span class="at">status_ref =</span> <span class="st">&quot;inact&quot;</span>)</span></code></pre></div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<p>Chen, E. J., and Liu, T. P. (2002). Choices of alpha value in
+regression composite estimation for the Canadian Labour Force Survey.
+<em>Proceedings of the Survey Methods Section, SSC</em>.</p>
+<p>Fuller, W. A., and Rao, J. N. K. (2001). A regression composite
+estimator with application to the Canadian Labour Force Survey.
+<em>Survey Methodology</em> 27(1), 45-51.</p>
+<p>Gambino, J., Kennedy, B., and Singh, M. P. (2001). Regression
+composite estimation for the Canadian Labour Force Survey: evaluation
+and implementation. <em>Survey Methodology</em> 27(1), 65-74.</p>
+<p>Statistics Canada (2017). <em>Methodology of the Canadian Labour
+Force Survey</em>, catalogue no. 71-526-X, sec. 6.3.1.</p>
+</div>
+<div id="where-to-look-next" class="section level2">
+<h2>Where to look next</h2>
+<p><code>?step_cre</code> for the full argument list,
+<code>vignette(&quot;coordinated-replication&quot;)</code> for the mechanism that
+pairs the replicates across waves,
+<code>vignette(&quot;rotating-panels&quot;)</code> for the production workflow,
+and <code>?wave_carry</code> for what travels between runs.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

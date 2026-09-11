@@ -23,13 +23,35 @@ apply_step <- function(step, data, w) UseMethod("apply_step")
   cut(p, breaks = brks, include.lowest = TRUE)
 }
 
+# Model weights, rescaled to mean 1. A binomial glm reads `weights` as the NUMBER OF BINOMIAL
+# TRIALS, and binomial()$initialize builds the IRLS starting value from them:
+#   mustart = (w * y + 0.5) / (w + 1).
+# With design weights on their natural scale (w ~ 100) that is 0.997 for a respondent and 0.003
+# for a nonrespondent, i.e. the IRLS starts AT the separation boundary (eta = +-6) and the
+# coefficients run away -- on real survey weights the intercept reaches 1e15, every fitted
+# probability collapses to exactly 0 or 1, and glm reports converged = TRUE with no warning
+# other than "fitted probabilities numerically 0 or 1". The consequence is silent and severe:
+# phi-hat == 1 makes the 1/phi adjustment a no-op (the nonresponse is simply not compensated),
+# and in a bootstrap replicate that lands the other way phi-hat hits the 1e-6 floor and one unit
+# carries a weight of 1e6 times its own, which is what an absurd replicate variance looks like.
+# The estimating equation sum_i w_i (y_i - mu_i) x_i = 0 is invariant to a common positive
+# rescaling of w, so normalising leaves the estimator mathematically untouched and only fixes
+# the numerics. The same applies to the case weights of every other engine. (NR-PROP-01)
+.wf_model_wts <- function(w) {
+  if (!length(w)) return(w)
+  m <- mean(w[is.finite(w) & w > 0])
+  if (!is.finite(m) || m <= 0) return(w)
+  w / m
+}
+
 # Estimate the response propensity P(respond) with the chosen engine.
 # Returns probabilities (bounded away from 0 for 1/p).
 # The engine only changes HOW p is estimated; the class/unit logic is the same.
 # `crossfit` (K) and `cluster_id`/`seed` enable K-fold out-of-sample prediction
 # to avoid overfitting; when NULL, the model is fitted and predicted in-sample.
 .estimate_propensity <- function(engine, formula, dd, weights,
-                                 crossfit = NULL, cluster_id = NULL, seed = NULL) {
+                                 crossfit = NULL, cluster_id = NULL, seed = NULL,
+                                 raw_inverse = FALSE, quiet = FALSE) {
   # NA in a model covariate makes predict() return NA for those rows: the fitted
   # propensity is NA, the unit falls into no adjustment class, and (for
   # nonrespondents) never gets set to weight 0 -- it survives the cascade
@@ -45,12 +67,26 @@ apply_step <- function(step, data, w) UseMethod("apply_step")
                         "on a complete covariate set."),
                  paste(miss, collapse = ", ")), call. = FALSE)
   f <- stats::update(formula, .y ~ .)
+  weights <- .wf_model_wts(weights)      # mean 1: see .wf_model_wts() (NR-PROP-01)
   dd$.wts <- weights
 
   # fit on rows `tr`, predict on rows `te`; returns P(respond) for `te`
   fit_pred <- function(tr, te) {
     dtr <- dd[tr, , drop = FALSE]; dte <- dd[te, , drop = FALSE]
     wtr <- weights[tr]
+    # ML-02: a fold whose training set has only respondents (or only nonrespondents)
+    # cannot estimate a propensity at all. glm returns fitted values at the 0/1
+    # boundary; rpart and ranger abort with messages that name neither the step nor
+    # the fold ("number of rows of matrices must match", "subscript out of bounds").
+    if (length(unique(dtr$.y[!is.na(dtr$.y)])) < 2L)
+      stop(sprintf(paste0("A response-propensity model could not be fitted: its training ",
+                          "set contains only %s. %sCollapse the model's categories, reduce ",
+                          "the number of folds, or use crossfit = NULL."),
+                   if (all(dtr$.y == 1, na.rm = TRUE)) "respondents" else "nonrespondents",
+                   if (!is.null(crossfit))
+                     sprintf("This is one cross-fitting fold (crossfit = %d), not the whole sample. ",
+                             crossfit) else ""),
+           call. = FALSE)
     if (engine == "logit") {
       # weighted binomial glm warns about non-integer successes; this is a
       # known, benign consequence of survey weights, so suppress just that one.
@@ -89,7 +125,41 @@ apply_step <- function(step, data, w) UseMethod("apply_step")
                            fit_predict = function(tr, te_list)
                              lapply(te_list, function(te) fit_pred(tr, te)))
   }
-  pmax(as.numeric(p), 1e-6)             # avoids division by zero in 1/p
+  # ML-02. The 1e-6 floor below keeps 1/p finite, but it also hides WHY p was zero.
+  # The frequent cause is not a division by zero: it is a (quasi-)separated fit --
+  # typically a rare category that a cross-fitting fold's training set does not
+  # identify, so its units are predicted at the 0/1 boundary. The floor then turns a
+  # respondent's weight into 1e6 times its base weight, and with `num_classes` left
+  # at NULL (raw 1/p, no quantile binning to absorb it) the weighted total moved by a
+  # factor of 2,500 in a 400-unit test. Say it, and refuse it where it would actually
+  # multiply a respondent's weight.
+  p <- as.numeric(p)
+  if (any(!is.finite(p)))
+    stop(sprintf(paste0("%d fitted response propensit%s not finite. The propensity model ",
+                        "did not produce a usable fit%s; 1/p is undefined. Check the model ",
+                        "formula, or collapse categories the model cannot identify."),
+                 sum(!is.finite(p)), if (sum(!is.finite(p)) == 1L) "y is" else "ies are",
+                 if (!is.null(crossfit))
+                   sprintf(" in at least one cross-fitting fold (crossfit = %d)", crossfit)
+                 else ""),
+         call. = FALSE)
+  on_floor <- which(p < 1e-4)
+  if (length(on_floor) && !quiet) {
+    resp_hit <- sum(dd$.y[on_floor] == 1, na.rm = TRUE)
+    warning(sprintf(paste0(
+      "%d fitted response propensit%s below 1e-4, i.e. at the 0/1 boundary%s. This is ",
+      "either an honestly extreme propensity or a (quasi-)separated fit -- typically a ",
+      "rare category a cross-fitting fold's training set does not identify. %d of them ",
+      "belong to respondents, and %s. Collapse the rare category, reduce the number of ",
+      "folds, use crossfit = NULL, or set `num_classes` (which bins by propensity ",
+      "quantiles, using only their ranking, and is robust to this)."),
+      length(on_floor), if (length(on_floor) == 1L) "y is" else "ies are",
+      if (!is.null(crossfit)) sprintf(" (crossfit = %d)", crossfit) else "", resp_hit,
+      if (raw_inverse) "this step applies a raw 1/p, so their weights are multiplied by up to 1e6"
+      else "`num_classes` binning keeps 1/p from being applied to them directly"),
+      call. = FALSE)
+  }
+  pmax(p, 1e-6)                         # avoids division by zero in 1/p
 }
 
 # --- Unknown eligibility ---------------------------------------------------
@@ -268,7 +338,9 @@ apply_step.step_select_within <- function(step, data, w) {
     mw     <- if (is.null(step$weight_model) || isTRUE(step$weight_model)) Wh
               else rep(1, length(Wh))
     p      <- .estimate_propensity(step$engine, step$formula, ddh, mw,
-                                   crossfit = step$crossfit, seed = step$crossfit_seed)
+                                   crossfit = step$crossfit, seed = step$crossfit_seed,
+                                   raw_inverse = is.null(step$num_classes),
+                                   quiet = isTRUE(attr(data, "wf_replicate")))
     if (is.null(step$num_classes)) {
       factor_h <- ifelse(resp_h, 1 / p, 0)
       diag <- data.frame(engine = step$engine, level = "household",
@@ -311,7 +383,7 @@ apply_step.step_select_within <- function(step, data, w) {
       # household-level NR model)
       cal_slope = tryCatch(unname(stats::coef(suppressWarnings(stats::glm(
         as.integer(resp_h) ~ stats::qlogis(pmin(pmax(p, 1e-6), 1 - 1e-6)),
-        family = stats::binomial(), weights = Wh)))[2]), error = function(e) NA_real_))
+        family = stats::binomial(), weights = .wf_model_wts(Wh))))[2]), error = function(e) NA_real_))
     # Native per-unit detail (broadcast household -> members) for
     # collect_step_detail(); .weight_in/.factor come centrally from `history`.
     ud_det <- data.frame(.propensity = as.numeric(p)[mh],
@@ -505,7 +577,9 @@ apply_step.step_nonresponse <- function(step, data, w) {
              else rep(1, sum(eligible))
   p       <- .estimate_propensity(step$engine, step$formula, dd, mw,
                                   crossfit = step$crossfit, cluster_id = cl_cf,
-                                  seed = step$crossfit_seed)
+                                  seed = step$crossfit_seed,
+                                  raw_inverse = is.null(step$num_classes),
+                                  quiet = isTRUE(attr(data, "wf_replicate")))
   idx_el  <- which(eligible)
   resp_el <- respondent[eligible]
 
@@ -551,7 +625,7 @@ apply_step.step_nonresponse <- function(step, data, w) {
     num_classes = step$num_classes,
     cal_slope = tryCatch(unname(stats::coef(suppressWarnings(stats::glm(
       as.integer(resp_el) ~ stats::qlogis(pmin(pmax(p, 1e-6), 1 - 1e-6)),
-      family = stats::binomial(), weights = w[eligible])))[2]), error = function(e) NA_real_))
+      family = stats::binomial(), weights = .wf_model_wts(w[eligible]))))[2]), error = function(e) NA_real_))
   # Native per-unit detail for collect_step_detail() (.weight_in/.factor are
   # supplied centrally by the accessor from `history`, so they are NOT stored here).
   ud_det <- data.frame(.propensity = as.numeric(p),

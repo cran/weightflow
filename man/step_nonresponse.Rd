@@ -179,14 +179,12 @@ weighting_spec(sample_survey, base_weights = pw) |>
   prep()
 
 # gradient boosting engine (requires the 'xgboost' package)
-\donttest{
 if (requireNamespace("xgboost", quietly = TRUE)) {
   weighting_spec(sample_survey, base_weights = pw) |>
     step_nonresponse(respondent = responded, method = "propensity",
                      formula = ~ region + sex + age, engine = "boost",
                      num_classes = 5, crossfit = 5) |>
     prep()
-}
 }
 
 # nonresponse by calibration (two-phase): calibrate the respondents to the
@@ -201,6 +199,7 @@ weighting_spec(sample_survey, base_weights = pw) |>
 Other weighting steps:
 \code{\link[=step_assert]{step_assert()}},
 \code{\link[=step_calibrate]{step_calibrate()}},
+\code{\link[=step_cre]{step_cre()}},
 \code{\link[=step_drop_ineligible]{step_drop_ineligible()}},
 \code{\link[=step_model_calibration]{step_model_calibration()}},
 \code{\link[=step_nr_sensitivity]{step_nr_sensitivity()}},

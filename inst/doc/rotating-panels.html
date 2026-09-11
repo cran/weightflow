@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Rotating panels: net change, chaining and gross flows</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Rotating panels: net change, chaining and
+gross flows</h1>
+
+
+
+<p>A continuous household survey with a rotating design measures the
+same units more than once. That is what makes the
+<strong>change</strong> between two periods far more precise than the
+levels themselves – the shared sample cancels part of the sampling error
+– and it is also what makes the change <strong>harder</strong> to
+estimate. The two samples are not independent, so the variance of the
+change is not the sum of the two variances:</p>
+<p><span class="math display">\[V\!\left(\hat\theta_t -
+\hat\theta_{t-1}\right) = V\!\left(\hat\theta_t\right) +
+V\!\left(\hat\theta_{t-1}\right) - 2\,\mathrm{Cov}\!\left(\hat\theta_t,
+\hat\theta_{t-1}\right)\]</span></p>
+<p>and that covariance term is the whole problem: it is not a design
+constant you can look up, it has to be <em>produced</em> by the way the
+replicates are drawn.</p>
+<p>This vignette covers the three things a rotating panel makes
+possible, in the order an office needs them:</p>
+<ol style="list-style-type: decimal">
+<li>the <strong>net change</strong> between two periods, with its honest
+variance;</li>
+<li><strong>chaining</strong> period after period the way production
+actually runs, one month at a time, with only a small object traveling
+between runs;</li>
+<li>the <strong>gross flows</strong> – who moved between states – which
+need a longitudinal weight.</li>
+</ol>
+<p>The package’s panel layer follows the methodology of Statistics
+Canada’s Labour Force Survey (cat. 71-526-X, sec. 7.2.2) for the
+coordinated replication, and ECLAC’s household-survey manual (chapters
+XVI-XVII) for the longitudinal weight and the flows.</p>
+<div id="the-structure-comes-first" class="section level2">
+<h2>The structure comes first</h2>
+<p>Before any weighting, <code>panel_design()</code> reads the unit x
+wave crossing and describes what is actually there. It computes nothing
+about weights.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>pd <span class="ot">&lt;-</span> <span class="fu">panel_design</span>(panel_ine, <span class="at">unit =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">wave =</span> <span class="st">&quot;wave&quot;</span>,</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>                   <span class="at">rotation_group =</span> <span class="st">&quot;rotation_group&quot;</span>, <span class="at">pattern =</span> <span class="st">&quot;6&quot;</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>pd</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow panel design&gt;</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="co">#&gt;   waves      : 3 (1, 2, 3)</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="co">#&gt;   unit       : household_id + person_no</span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="co">#&gt;   rotation   : rotation_group  pattern: 6</span></span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt;   units      : 2783 (linked in &gt;=2 waves: 2063, 74%)</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt;   overlap (row wave retained in column wave):</span></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt;   1    2    3   </span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 1 1.00 0.83 0.64</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 2 0.83 1.00 0.81</span></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co">#&gt; 3 0.65 0.82 1.00</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a><span class="co">#&gt;   Pr(panel selection), adjacent : 0.833, 0.833  (full combination: 0.667)</span></span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co">#&gt;   overlap implied by pattern    : 0.83 0.67   (lag 1 2)</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a><span class="co">#&gt;   pattern                       : 6 group(s) in sample, cycle 6, useful lags 1, 2, 3, 4, 5</span></span></code></pre></div>
+<p>Two things to read in that output.</p>
+<p>The <strong>overlap matrix</strong> is observed, from the data. The
+<strong>profile implied by the pattern</strong> is theoretical, derived
+from the rotation calendar. The declared <code>pattern</code> is
+therefore <em>verification</em>, not configuration: when the observed
+overlap falls below what the design implies, the linkage key is suspect,
+and <code>PN-01</code> says so. Ordinary attrition pulls the observed
+overlap down a little; a broken key pulls it down a lot.</p>
+<p>The pattern is parsed into the whole profile, not just the adjacent
+lag, because the informative lag is not always lag 1:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>prof <span class="ot">&lt;-</span> <span class="cf">function</span>(p) <span class="fu">round</span>(weightflow<span class="sc">:::</span><span class="fu">.wf_pattern_overlap</span>(p)<span class="sc">$</span>profile[<span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>], <span class="dv">3</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="fu">rbind</span>(<span class="st">`</span><span class="at">6        (Canada LFS, ECH Uruguay)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">prof</span>(<span class="st">&quot;6&quot;</span>),</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>      <span class="st">`</span><span class="at">4(0)1    (ECLAC ch. XVI example)</span><span class="st">`</span>   <span class="ot">=</span> <span class="fu">prof</span>(<span class="st">&quot;4(0)1&quot;</span>),</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>      <span class="st">`</span><span class="at">2-(2)-2  (Chile ENE, Italy)</span><span class="st">`</span>        <span class="ot">=</span> <span class="fu">prof</span>(<span class="st">&quot;2-(2)-2&quot;</span>),</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>      <span class="st">`</span><span class="at">4-8-4    (US CPS)</span><span class="st">`</span>                  <span class="ot">=</span> <span class="fu">prof</span>(<span class="st">&quot;4-8-4&quot;</span>),</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>      <span class="st">`</span><span class="at">1(2)5    (PNAD Continua)</span><span class="st">`</span>           <span class="ot">=</span> <span class="fu">prof</span>(<span class="st">&quot;1(2)5&quot;</span>))</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;                                        1     2    3     4     5</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; 6        (Canada LFS, ECH Uruguay) 0.833 0.667 0.50 0.333 0.167</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; 4(0)1    (ECLAC ch. XVI example)   0.750 0.500 0.25 0.000 0.000</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; 2-(2)-2  (Chile ENE, Italy)        0.500 0.000 0.25 0.500 0.250</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; 4-8-4    (US CPS)                  0.750 0.500 0.25 0.000 0.000</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; 1(2)5    (PNAD Continua)           0.000 0.000 0.80 0.000 0.000</span></span></code></pre></div>
+<p><code>2-(2)-2</code> shares <strong>no</strong> sample at lag 2 and
+half of it at lag 4 – as much as at lag 1 – so a year-on-year change
+there needs as much coordination as a quarter-on-quarter one. The PNAD
+Continua design <code>1(2)5</code> shares nothing with the adjacent
+quarter at all: a design built around “the previous period” would be
+exactly backwards for it. Both notations are accepted and describe the
+same calendar: <code>&quot;2-(2)-2&quot;</code> and <code>&quot;2(2)2&quot;</code> are the
+same design.</p>
+</div>
+<div id="net-change-between-two-periods" class="section level2">
+<h2>Net change between two periods</h2>
+<p>The coordinated bootstrap resamples <strong>PSUs</strong>, and a PSU
+present in both waves is resampled the same way in both. That is what
+lets the overlap show up as covariance.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>w1 <span class="ot">&lt;-</span> <span class="fu">subset</span>(panel_ine, wave <span class="sc">==</span> <span class="dv">1</span> <span class="sc">&amp;</span> disposition <span class="sc">==</span> <span class="st">&quot;R&quot;</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>w2 <span class="ot">&lt;-</span> <span class="fu">subset</span>(panel_ine, wave <span class="sc">==</span> <span class="dv">2</span> <span class="sc">&amp;</span> disposition <span class="sc">==</span> <span class="st">&quot;R&quot;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>rec <span class="ot">&lt;-</span> <span class="cf">function</span>(d) <span class="fu">weighting_spec</span>(d, <span class="at">base_weights =</span> pw) <span class="sc">|&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="fu">step_nonresponse</span>(<span class="at">respondent =</span> disposition <span class="sc">==</span> <span class="st">&quot;R&quot;</span>, <span class="at">by =</span> <span class="st">&quot;sex&quot;</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>wb <span class="ot">&lt;-</span> <span class="fu">wave_bootstrap</span>(<span class="fu">list</span>(<span class="at">T1 =</span> <span class="fu">rec</span>(w1), <span class="at">T2 =</span> <span class="fu">rec</span>(w2)), <span class="at">replicates =</span> <span class="dv">100</span>,</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>                     <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="fu">change_mean</span>(wb, <span class="st">&quot;unemployed&quot;</span>)</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow net change&gt;</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;   T1 -&gt; T2</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;   change     : -0.0149512   SE 0.010056</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;   95% CI    : [-0.0346606, 0.00475807]</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt;   V1 0.0001126 | V2 0.0001035 | Cov 5.75e-05 | rho 0.533   (levels)</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt;   V = 0.0001011  vs  V1+V2 = 0.0002161  (deff_change 0.468: overlap saved 53%)</span></span></code></pre></div>
+<p><code>rho</code> is the correlation <span class="math inline">\(\rho\)</span> the overlap induces, and
+<code>deff_change</code> is</p>
+<p><span class="math display">\[\mathrm{deff}_\Delta =
+\frac{V\!\left(\hat\theta_t -
+\hat\theta_{t-1}\right)}{V\!\left(\hat\theta_t\right) +
+V\!\left(\hat\theta_{t-1}\right)}\]</span></p>
+<p>the ratio between the variance reported here and what an office would
+report if it treated the two periods as independent samples. Ignoring
+the overlap does not give a conservative answer – it gives a wrong one,
+in either direction depending on the sign of the covariance.</p>
+<p>For a combination over more than two waves – a rolling quarter, an
+annual average – <code>panel_estimate()</code> takes an arbitrary
+contrast:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">panel_estimate</span>(wb, <span class="fu">mean_of</span>(<span class="st">&quot;unemployed&quot;</span>), <span class="at">contrast =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>))   <span class="co"># the net change</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">panel_estimate</span>(wb, <span class="fu">mean_of</span>(<span class="st">&quot;unemployed&quot;</span>))                        <span class="co"># the average</span></span></code></pre></div>
+</div>
+<div id="chaining-how-production-actually-runs" class="section level2">
+<h2>Chaining: how production actually runs</h2>
+<p><code>wave_bootstrap()</code> wants every wave at once. An office
+does not have them: it publishes month <code>t</code> weeks after month
+<code>t-1</code>, and the twelfth month of the year cannot wait for the
+first eleven to be reprocessed. <code>wave_step()</code> runs
+<strong>one period at a time</strong> and hands the next period a small
+object – the <em>carry</em> – that is all it needs.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># period 1: nothing to coordinate with yet</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(<span class="fu">rec</span>(w1), <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">500</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>                <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="st">&quot;2026-01&quot;</span>, <span class="at">seed =</span> <span class="dv">1</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="fu">saveRDS</span>(<span class="fu">wave_carry</span>(s1), <span class="st">&quot;carry/2026-01.rds&quot;</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co"># period 2, weeks later, in a fresh session</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>prev <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">&quot;carry/2026-01.rds&quot;</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>s2 <span class="ot">&lt;-</span> <span class="fu">wave_step</span>(<span class="fu">rec</span>(w2), <span class="at">previous =</span> prev, <span class="at">estimands =</span> EST, <span class="at">replicates =</span> <span class="dv">500</span>,</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>                <span class="at">strata =</span> <span class="st">&quot;stratum&quot;</span>, <span class="at">psu =</span> <span class="st">&quot;psu&quot;</span>, <span class="at">period =</span> <span class="st">&quot;2026-02&quot;</span>, <span class="at">seed =</span> <span class="dv">2</span>)</span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>s2<span class="sc">$</span>weights   <span class="co"># the cross-sectional weights the office publishes</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>s2<span class="sc">$</span>change    <span class="co"># the net change against 2026-01, with rho and deff_change</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>s2<span class="sc">$</span>strata    <span class="co"># the coordination diagnostic, stratum by stratum</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">saveRDS</span>(<span class="fu">wave_carry</span>(s2), <span class="st">&quot;carry/2026-02.rds&quot;</span>)</span></code></pre></div>
+<p>Three properties worth stating plainly.</p>
+<p><strong>The cross-sectional weights are untouched.</strong>
+<code>s2$weights</code> is identical to
+<code>prep(spec)$final_weight</code>. Coordination adds the change and
+the carry; it never moves the point estimate the office publishes.</p>
+<p><strong><code>previous</code> is a list, not a file.</strong> Which
+earlier periods share sample with this one is decided by the rotation
+calendar, not by proximity: with <code>2-(2)-2</code> the useful lags
+are 1, 3, 4 and 5, and lag 2 is empty. Each PSU inherits its
+multiplicity from the most recent carry that contains it, so gaps and
+returning cohorts resolve themselves.</p>
+<p><strong>The coordination is exact when the stratum keeps its
+size.</strong> Coordination transfers the PSU <em>multiplicities</em>,
+and when <code>n_h</code> is unchanged the transfer is a permutation –
+case (ii) of the LFS methodology – so no replicate needs adjusting.
+<code>$strata</code> reports the case and the share of replicates that
+closed without adjustment, per stratum. That column is the quality
+indicator that decides whether a figure is publishable.</p>
+<div id="combinations-over-the-chain" class="section level3">
+<h3>Combinations over the chain</h3>
+<p><code>wave_step()</code> reports pairwise changes. A rolling quarter
+is not pairwise, and <code>wave_contrast()</code> estimates any linear
+combination straight from the saved carries:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>tr <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">c</span>(<span class="st">&quot;2026-01&quot;</span>, <span class="st">&quot;2026-02&quot;</span>, <span class="st">&quot;2026-03&quot;</span>),</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>             \(m) <span class="fu">readRDS</span>(<span class="fu">sprintf</span>(<span class="st">&quot;carry/%s.rds&quot;</span>, m)))</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="fu">wave_contrast</span>(tr, <span class="st">&quot;unemployment_rate&quot;</span>)                          <span class="co"># rolling quarter</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="fu">wave_contrast</span>(tr, <span class="st">&quot;unemployment_rate&quot;</span>, <span class="at">contrast =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>))  <span class="co"># T3 - T1</span></span></code></pre></div>
+<p>This works without the waves being in memory because each carry
+stores the <code>R</code> replicate values of every declared estimand,
+and those replicates are <strong>paired across periods</strong> – the
+coordination transferred the multiplicities. Stacking them recovers the
+full covariance matrix, and any contrast follows from it.</p>
+</div>
+<div id="the-composite-estimator" class="section level3">
+<h3>The composite estimator</h3>
+<p>When the recipe ends in <code>step_cre()</code>, the calibration of
+period <span class="math inline">\(t\)</span> targets two blocks at
+once: the known demographic totals <span class="math inline">\(\mathbf{X}\)</span>, and composite totals <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> <strong>estimated
+with the previous wave</strong>. Treating the second block as if it were
+known makes the variance anticonservative, so replicate <span class="math inline">\(b\)</span> of period <span class="math inline">\(t\)</span> rebuilds <span class="math inline">\(\widehat{\mathbf{Z}}\)</span> from replicate <span class="math inline">\(b\)</span> of period <span class="math inline">\(t-1\)</span>. That is why a chain with
+<code>step_cre()</code> needs the “fat” carry: it must bring the
+previous period’s replicate weights, not just its replicate estimates.
+<code>$n_cre_injected</code> and <code>$n_cre_skipped</code> audit that
+the injection happened.</p>
+<p>The estimator, its two imputations for the birth rotation group and
+the tuning constant <span class="math inline">\(\alpha\)</span> are in
+<code>vignette(&quot;composite-estimation&quot;)</code>.</p>
+</div>
+</div>
+<div id="gross-flows-who-moved" class="section level2">
+<h2>Gross flows: who moved</h2>
+<p>A net change is a difference of aggregates. It cannot distinguish an
+immobile population from one where equal numbers enter and leave
+employment. For that you need the <strong>longitudinal</strong> file and
+a longitudinal weight.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>wide <span class="ot">&lt;-</span> <span class="fu">panel_merge</span>(<span class="fu">list</span>(<span class="at">T1 =</span> <span class="fu">subset</span>(panel_ine, wave <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>                         <span class="at">T2 =</span> <span class="fu">subset</span>(panel_ine, wave <span class="sc">==</span> <span class="dv">2</span>)),</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>                    <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;household_id&quot;</span>, <span class="st">&quot;person_no&quot;</span>), <span class="at">require =</span> <span class="st">&quot;all&quot;</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>lw <span class="ot">&lt;-</span> <span class="fu">weighting_spec</span>(wide, <span class="at">base_weights =</span> pw_T1) <span class="sc">|&gt;</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="fu">step_drop_ineligible</span>(disposition_T2 <span class="sc">==</span> <span class="st">&quot;OS&quot;</span>, <span class="at">reason =</span> <span class="st">&quot;left the target population&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="fu">step_attrition</span>(<span class="at">respondent =</span> disposition_T2 <span class="sc">==</span> <span class="st">&quot;R&quot;</span>, <span class="at">method =</span> <span class="st">&quot;propensity&quot;</span>,</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>                 <span class="at">formula =</span> <span class="sc">~</span> age_T1 <span class="sc">+</span> sex_T1) <span class="sc">|&gt;</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="fu">transition_matrix</span>(lw, <span class="at">from =</span> <span class="st">&quot;lf_status_T1&quot;</span>, <span class="at">to =</span> <span class="st">&quot;lf_status_T2&quot;</span>, <span class="at">format =</span> <span class="st">&quot;row&quot;</span>)</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; Warning: The flow table covers 96.2% of the weight: 3.8% with a missing state.</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; Those units are not in any cell, so the conditional and joint formats</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; renormalize over the rest. In a panel that share is usually the attrition --</span></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; decide it explicitly (an &#39;out of scope&#39; state, or step_drop_ineligible()).</span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; &lt;weightflow transition: lf_status_T1 -&gt; lf_status_T2  [row]&gt;</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt;        to</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; from       emp inact  unemp</span></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt;   emp   0.9547     0 0.0453</span></span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="co">#&gt;   inact 0.0000     1 0.0000</span></span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a><span class="co">#&gt;   unemp 0.1120     0 0.8880</span></span></code></pre></div>
+<p><code>boot_transition()</code> adds a standard error per cell, and
+<code>boot_flows()</code> gives the same information as population
+totals plus the net flows <code>i-&gt;j</code> minus
+<code>j-&gt;i</code> and the margins – how many started in each state,
+ended in each, stayed, and moved.</p>
+<p>A caveat about the illustration, not the method: the four shipped
+panel datasets are synthetic, and in all of them <strong>inactivity is
+an absorbing state</strong> – nobody enters or leaves it. So the matrix
+above shows movement only between employment and unemployment, and the
+<code>inact</code> row and column are degenerate. The mechanics are the
+point here; on real microdata the transitions in and out of inactivity
+are usually the interesting ones.</p>
+<p>Note the order of the two steps, which is not cosmetic.
+<strong>Leaving the target population is not nonresponse.</strong>
+Someone who died or emigrated is removed from the universe with
+<code>step_drop_ineligible()</code>; their weight is not redistributed
+to anyone. Someone who is still in the universe but did not answer is
+attrition, and their weight <em>is</em> redistributed, among the units
+that remain. Collapsing the two inflates the population.</p>
+<p>Three further conventions govern a longitudinal weight – who belongs
+to the longitudinal population, which period’s totals to calibrate to,
+and why cross-sectional estimates from a longitudinal file are reference
+only. They are decisions the analyst makes and the package cannot check,
+and they are set out in <code>vignette(&quot;panel-longitudinal&quot;)</code> and
+in <code>?step_cross_sectional</code>.</p>
+</div>
+<div id="where-to-look-next" class="section level2">
+<h2>Where to look next</h2>
+<p>This vignette is the entry point; three companions go deeper into the
+pieces it uses.</p>
+<ul>
+<li><code>vignette(&quot;coordinated-replication&quot;)</code> – what actually
+travels between waves, the four coordination cases, and how to read the
+<code>$strata</code> diagnostic that decides whether a change is
+publishable.</li>
+<li><code>vignette(&quot;composite-estimation&quot;)</code> –
+<code>step_cre()</code> in full: what the composite estimator buys, and
+why its control totals make its variance a special case.</li>
+<li><code>vignette(&quot;panel-longitudinal&quot;)</code> – the
+<strong>pure</strong> panel: attrition over many waves, the longitudinal
+weight, and gross flows.</li>
+</ul>
+<p>For the reference pages: <code>?wave_step</code> and
+<code>?wave_carry</code> for the chaining engine,
+<code>?wave_contrast</code> for combinations over a chain,
+<code>?panel_design</code> for the structure layer,
+<code>?transition_matrix</code> for the flows, and
+<code>?report_panel</code> for a quality report of a panel run.
+<code>vignette(&quot;variance-estimation&quot;)</code> covers the single-period
+bootstrap this one builds on, and <code>vignette(&quot;validation&quot;)</code>
+checks the change variance against an analytic estimator from a
+different family.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
