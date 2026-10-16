@@ -363,15 +363,26 @@ replicate <em>b</em> of period <em>t-1</em>, a PSU present in both must
 be resampled <strong>the same way</strong> in both. So what travels
 between periods is the multiplicity matrix itself, not the random seed
 and not the uniforms behind it.</p>
-<p>The distinction matters. Re-drawing period <em>t</em> from a stored
-uniform looks equivalent and is not: the exact multinomial draw is a
-joint constraint over the whole stratum (the multiplicities must add up
-to <code>m_h</code>), so re-drawing cannot both keep the stratum total
-right <em>and</em> give every shared PSU exactly the multiplicity it
-had. Transferring the integers does both. This is the Statistics Canada
-LFS procedure (cat. 71-526-X, sec. 7.2.2, after Roberts, Kovacevic,
-Mantel and Phillips 2001), and it is what <code>wave_step()</code>
-implements.</p>
+<p>Transferring the integers is the Statistics Canada LFS procedure
+(cat. 71-526-X, sec. 7.2.2, after Roberts, Kovacevic, Mantel and
+Phillips 2001), and it is what <code>wave_step()</code> implements. It
+is the natural thing for a chain: each period needs only the previous
+period’s carry, gaps and returning cohorts are handled by a registry,
+and nothing has to store the uniforms of every period that came
+before.</p>
+<p>How it compares with re-drawing from a stored uniform, measured
+rather than assumed. While a stratum keeps its number of PSUs – the
+rotating-panel case, where rotation replaces PSUs but does not change
+<code>n_h</code> – the two coincide: re-drawing gives every shared PSU
+exactly the multiplicity it had (correlation 1.000 across every rank in
+simulation) and the stratum total stays exactly <code>m_h</code>. When
+<code>n_h</code> itself changes, which is PSU loss rather than rotation,
+neither does: re-drawing loses coordination down the PSU order, and
+transferring has to add or drop draws to close on the new
+<code>m_h</code>. Measured against a design-level oracle the two then
+recover the same between-wave covariance, about 0.85 of the truth. See
+<code>?wave_bootstrap</code> for what that costs and why it is a
+limitation of the method rather than of either mechanism.</p>
 </div>
 <div id="the-four-cases" class="section level2">
 <h2>The four cases</h2>

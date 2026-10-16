@@ -10,6 +10,13 @@ vignette: >
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(weightflow)
+# Figures are kept as standalone .svg files and embedded as data URIs. An inline
+# <svg> element does not survive an HTML re-parse (libxml2 lowercases attribute
+# names, so `viewBox` becomes `viewbox` and the figure collapses to zero height);
+# a data URI is one attribute value and is copied verbatim.
+wf_fig <- function(file, alt = "")
+  sprintf('<img src="%s" alt="%s" style="width:100%%;max-width:960px;" />',
+          knitr::image_uri(file.path("figures", file)), alt)
 ```
 
 In a rotating panel most of this month's sample was also in last month's. The
@@ -118,7 +125,14 @@ second wave on, `previous` is the prepped recipe of the wave before.
 wv <- lapply(1:3, function(k) {
   d <- subset(panel_ine, wave == k & disposition == "R"); d$sex <- factor(d$sex); d
 })
-Xtot <- function(d) colSums(d$pw * model.matrix(~ sex, data = d))
+# ONE population vector for every wave, as a series of projections would be. `Zhat`
+# is a total estimated on the PREVIOUS wave's scale, so giving each wave its own
+# design-weighted total puts two population scales in the same system: the composite
+# block stops being a smoother and the whole gap lands on the status estimate, with
+# every constraint met and `converged = TRUE`. On `panel_ine` the design totals drift
+# 12.9% between waves 1 and 2, which moves the employment rate by 7 points.
+Xpop <- colSums(wv[[1]]$pw * model.matrix(~ sex, data = wv[[1]]))
+Xtot <- function(d) Xpop
 ```
 
 ```{r seed}
@@ -217,6 +231,14 @@ reason a chain containing `step_cre()` needs the previous period's **replicate
 weights**, not just its replicate estimates.
 
 ## The fat carry
+
+Seen from the production chain, a composite recipe changes exactly two things: it
+adds one input, and it fattens one output. Everything else in the period is the
+same object it was before.
+
+```{r ce-adds, echo = FALSE, results = "asis"}
+cat(wf_fig("ce-adds.svg", "What the composite estimator adds to the chain"))
+```
 
 Hence the two shapes of the carry. `carry = "auto"`, the default, inspects the
 recipe: with no `step_cre()` it stores only the replicate values of the declared

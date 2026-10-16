@@ -151,7 +151,18 @@
     # Poisson starts do not use the weights, and there the scale carries the dispersion, so
     # leave those alone. See .wf_model_wts(). (NR-PROP-01)
     if (isTRUE(m$family == "binomial")) train$.wts <- .wf_model_wts(train$.wts)
-    fit <- stats::glm(f, data = train, family = fam, weights = .wts)
+    # Once those weights are normalised they stop being integers, and a weighted
+    # binomial glm then warns "non-integer #successes in a binomial glm!" on every fit
+    # -- per model and per cross-fitting fold, so a model-calibration step floods the
+    # report with a warning that says nothing. It is a known, benign consequence of
+    # survey weights. Muffle exactly that message and let every other warning
+    # (separation, non-convergence, rank deficiency) through, which is the same guard
+    # .estimate_propensity() already applies to the propensity fit.
+    fit <- withCallingHandlers(
+      stats::glm(f, data = train, family = fam, weights = .wts),
+      warning = function(w) {
+        if (grepl("non-integer", conditionMessage(w))) invokeRestart("muffleWarning")
+      })
     return(lapply(newdatas, function(nd)
       as.numeric(stats::predict(fit, newdata = nd, type = "response"))))
   }

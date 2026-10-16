@@ -1,3 +1,51 @@
+# weightflow 1.3.1 (in development)
+
+## New features
+
+* `step_round(method = "balanced")` takes `formula`, balancing on the calibration design
+  rather than on the crossed cells of `by`.
+
+* `step_model_calibration()` and `step_pseudoweight()` take `by`, fitting and calibrating
+  one domain at a time.
+
+* `step_cre()` takes `n_groups`, so the equal-representation target comes from the design
+  and not from the responding sample, and `rescale_previous` for a previous wave whose
+  population differs from the current one.
+
+* `jackknife_weights()` takes `groups` and `seed`, for a delete-a-group jackknife, and
+  `max_replicates`, which stops a run before it builds more replicates than intended.
+
+* `ci_type` and `df` on the estimation entry points, for Student t intervals when the
+  design degrees of freedom are few.
+
+* `print()` on a bootstrap object reports the Monte Carlo error of its standard errors.
+
+## Bug fixes
+
+* A `reference_sample()` kept its weights in positional order: reordering or subsetting
+  its rows misaligned them silently. They now travel with the rows.
+
+* Warnings and diagnostics across the pseudo-weighting, panel, trimming and calibration
+  steps now fire where they were silent, stop firing on sound models, and state what a
+  variance assumes about a reference survey. In particular a non-probability recipe is
+  no longer accepted in silence when it adjusts nothing, pseudo-weights twice, or is
+  exported to `survey` as if it had a sampling design. Report values are escaped in the
+  HTML.
+
+## Documentation
+
+* The non-probability article was rewritten around the multipurpose-calibration
+  argument: what one weight for many variables costs, why a flexible working model is
+  needed, and the rank ceiling on the number of control totals a linear in-sample model
+  can carry. The rotating-panel, longitudinal-panel, composite-estimation and quick-start
+  articles were rebuilt around the same figures.
+
+* Vignette figures now ship as standalone `.svg` files embedded as data URIs. Inline SVG
+  did not survive the HTML post-processing: re-parsing the rendered page converts attribute
+  names to lower case, which is correct for HTML but fatal for SVG (`viewBox` becomes
+  `viewbox`), and a figure with a relative width and no explicit height collapsed to zero
+  height. A data URI is a single attribute value and is copied verbatim.
+
 # weightflow 1.3.0
 
 ## New features

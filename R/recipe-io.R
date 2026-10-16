@@ -65,9 +65,9 @@
     return(list(.wf = "expr", value = paste(deparse(x), collapse = " ")))
   if (inherits(x, "wf_reference_sample"))
     return(list(.wf = "reference_sample",
-                n = length(attr(x, "wf_ref_weights")),
+                n = length(.wf_ref_weights(x)),
                 vars = as.list(names(x)),
-                has_replicates = !is.null(attr(x, "wf_ref_replicates"))))
+                has_replicates = !is.null(.wf_ref_reps(x))))
   if (inherits(x, "wf_y_model"))
     return(list(.wf = "y_model",
                 formula = paste(deparse(x$formula), collapse = " "),
@@ -107,12 +107,18 @@
   x
 }
 
+# Every formula a recipe carries goes through here, so the whitelist cannot be
+# bypassed by adding a node type that builds one on its own (IO-03).
+.wf_safe_formula <- function(txt, step_id, allow_code) {
+  fo <- stats::as.formula(txt, env = baseenv())
+  if (!isTRUE(allow_code)) .wf_check_expr(fo, step_id, "formula")
+  fo
+}
+
 .wf_decode <- function(x, references, step_id, allow_code = FALSE) {
   if (is.list(x) && !is.null(x$.wf)) {
     switch(x$.wf,
-      formula = { fo <- stats::as.formula(x$value, env = baseenv())
-                  if (!isTRUE(allow_code)) .wf_check_expr(fo, step_id, "formula")
-                  fo },
+      formula = .wf_safe_formula(x$value, step_id, allow_code),
       expr    = { v <- str2lang(x$value)
                   if (!isTRUE(allow_code)) .wf_check_expr(v, step_id, "expression")
                   v },
@@ -135,8 +141,28 @@
         names(cols) <- vapply(x$columns, function(cd) cd$name, character(1))
         as.data.frame(cols, stringsAsFactors = FALSE)
       },
-      y_model = y_model(stats::as.formula(x$formula, env = baseenv()),
-                        engine = x$engine, family = x$family),
+      y_model = {
+        # SECURITY (IO-03): this branch used to build its formula WITHOUT the whitelist
+        # the `formula` branch applies, so a y_model node was an open code-execution
+        # path: the formula reaches step_model_calibration() untouched and runs inside
+        # .model_predict() / model.matrix() on the first prep(). The NA guard does not
+        # see it either -- all.vars() on `I(system("..."))` is character(0). Same check
+        # as every other formula, and `engine`/`family` against closed catalogues, so a
+        # hand-edited recipe cannot name an engine the constructor would have refused.
+        eng <- x$engine %||% "glm"
+        if (!is.character(eng) || length(eng) != 1L ||
+            !eng %in% c("glm", "tree", "forest", "boost"))
+          stop(sprintf(paste0("Step '%s' stores a y_model with engine '%s', which is not one ",
+                              "of glm, tree, forest, boost."), step_id,
+                       paste(utils::head(as.character(eng), 1L), collapse = "")), call. = FALSE)
+        fam <- x$family
+        if (!is.null(fam) && (!is.character(fam) || length(fam) != 1L ||
+                              !fam %in% c("gaussian", "binomial", "poisson")))
+          stop(sprintf(paste0("Step '%s' stores a y_model with family '%s', which is not one ",
+                              "of gaussian, binomial, poisson."), step_id,
+                       paste(utils::head(as.character(fam), 1L), collapse = "")), call. = FALSE)
+        y_model(.wf_safe_formula(x$formula, step_id, allow_code), engine = eng, family = fam)
+      },
       `function` = {
         # SECURITY: a `.wf: function` node carries arbitrary R source that would run
         # immediately here (eval at read time, before any prep()). A recipe is meant to

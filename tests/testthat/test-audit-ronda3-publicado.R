@@ -142,3 +142,29 @@ test_that("TRIM-01: `kappa` prices bias against variance in the Potter cutoff", 
   expect_warning(step_trim_weights(weighting_spec(d, base_weights = w0), kappa = 2),
                  "only affects method")
 })
+
+test_that("IO-03: a y_model node in a recipe cannot smuggle code past the whitelist", {
+  # The `formula` and `expr` branches were checked; `y_model` built its formula on its
+  # own and handed it to step_model_calibration(), where it runs on the first prep().
+  # all.vars() on I(system("...")) is character(0), so the NA guard never saw it either.
+  bad <- list(.wf = "y_model", engine = "glm", family = NULL,
+              formula = 'income ~ age + I(system("echo PWNED"))')
+  expect_error(.wf_decode(bad, references = NULL, step_id = "mc_1", allow_code = FALSE),
+               "only a fixed set of data-manipulation functions")
+  # an explicit trust flag still reads it, as for every other node
+  expect_error(.wf_decode(bad, references = NULL, step_id = "mc_1", allow_code = TRUE), NA)
+  # an ordinary formula is untouched
+  ok <- list(.wf = "y_model", engine = "glm", family = "gaussian",
+             formula = "income ~ age + sex")
+  m <- .wf_decode(ok, references = NULL, step_id = "mc_1", allow_code = FALSE)
+  expect_s3_class(m, "wf_y_model")
+  expect_equal(all.vars(m$formula), c("income", "age", "sex"))
+  # engine and family come from closed catalogues, as the constructor enforces
+  expect_error(.wf_decode(list(.wf = "y_model", formula = "y ~ x", engine = "rm -rf"),
+                          references = NULL, step_id = "s", allow_code = FALSE),
+               "not one of glm, tree, forest, boost")
+  expect_error(.wf_decode(list(.wf = "y_model", formula = "y ~ x", engine = "glm",
+                               family = "bogus"),
+                          references = NULL, step_id = "s", allow_code = FALSE),
+               "not one of gaussian, binomial, poisson")
+})

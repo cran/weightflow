@@ -1,12 +1,26 @@
 ## ----setup, include = FALSE---------------------------------------------------
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(weightflow)
+# Figures are kept as standalone .svg files and embedded as data URIs. An inline
+# <svg> element does not survive an HTML re-parse (libxml2 lowercases attribute
+# names, so `viewBox` becomes `viewbox` and the figure collapses to zero height);
+# a data URI is one attribute value and is copied verbatim.
+wf_fig <- function(file, alt = "")
+  sprintf('<img src="%s" alt="%s" style="width:100%%;max-width:960px;" />',
+          knitr::image_uri(file.path("figures", file)), alt)
 
 ## ----setup-data---------------------------------------------------------------
 wv <- lapply(1:3, function(k) {
   d <- subset(panel_ine, wave == k & disposition == "R"); d$sex <- factor(d$sex); d
 })
-Xtot <- function(d) colSums(d$pw * model.matrix(~ sex, data = d))
+# ONE population vector for every wave, as a series of projections would be. `Zhat`
+# is a total estimated on the PREVIOUS wave's scale, so giving each wave its own
+# design-weighted total puts two population scales in the same system: the composite
+# block stops being a smoother and the whole gap lands on the status estimate, with
+# every constraint met and `converged = TRUE`. On `panel_ine` the design totals drift
+# 12.9% between waves 1 and 2, which moves the employment rate by 7 points.
+Xpop <- colSums(wv[[1]]$pw * model.matrix(~ sex, data = wv[[1]]))
+Xtot <- function(d) Xpop
 
 ## ----seed---------------------------------------------------------------------
 seed <- weighting_spec(wv[[1]], base_weights = pw) |>
@@ -57,6 +71,9 @@ b <- tryCatch(bootstrap_weights(wave2, replicates = 5, strata = "stratum",
                                 psu = "psu", progress = FALSE),
               warning = function(w) conditionMessage(w))
 b
+
+## ----ce-adds, echo = FALSE, results = "asis"----------------------------------
+cat(wf_fig("ce-adds.svg", "What the composite estimator adds to the chain"))
 
 ## ----sizes--------------------------------------------------------------------
 c(thin_KB = as.numeric(object.size(plain[[1]]$carry)) / 1024,

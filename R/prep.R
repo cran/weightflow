@@ -68,6 +68,7 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
                         "as.numeric() (e.g. after read.csv(stringsAsFactors = TRUE) or an ",
                         "SPSS/Stata import)."), spec$base_weights, class(w)[1]), call. = FALSE)
   attr(data, "weightflow_base_w") <- w     # available to step_trim(reference = "base")
+  data_base_w <- w                         # N-08: the weights the recipe started from
 
   history <- list(base = w)             # weight at each stage
   steps   <- spec$steps
@@ -137,6 +138,30 @@ prep <- function(spec, min_cell_n = 30, max_factor = 2.5, warn = FALSE) {
   # internal prediction-columns attribute on the weights; strip it so it does not
   # leak into the user-facing final weight.
   attr(w, "wf_modelcal") <- NULL
+  # N3: a recipe is an ordered list, and some steps undo what an earlier one did. Each
+  # step's diagnostics only ever describe the moment that step ran, so a calibration
+  # that met its totals exactly still prints target == achieved in the report after a
+  # later step has thrown those totals away. Check the promise against the FINAL weight.
+  inv_alerts <- .wf_check_calib_invariant(steps, w)
+  if (length(inv_alerts)) {
+    all_alerts <- c(all_alerts, inv_alerts)
+    if (isTRUE(warn)) for (a in inv_alerts) warning(a, call. = FALSE)
+  }
+  # N-08. A non-probability sample that comes out of prep() with the weights it went in
+  # with has not been adjusted for anything: every unit still counts once, which is the
+  # unweighted volunteer mean under another name. The recipe ran and every step passed,
+  # so nothing else in the package has reason to speak -- the absence IS the finding.
+  if (isTRUE(spec$nonprob) && length(w) &&
+      isTRUE(all.equal(as.numeric(w), as.numeric(data_base_w), tolerance = 1e-12))) {
+    a <- paste0(
+      "This recipe declares a non-probability sample but leaves its weights as they ",
+      "came in, so every unit still counts once and any estimate from it is the ",
+      "unweighted sample mean. A volunteer sample is not self-weighting: add ",
+      "step_pseudoweight() against a probability reference, or a calibration to known ",
+      "population totals, before publishing anything from these weights.")
+    all_alerts <- c(all_alerts, a)
+    if (isTRUE(warn)) warning(a, call. = FALSE)
+  }
   structure(
     list(
       data         = data,
@@ -317,14 +342,57 @@ has_alerts <- function(object) length(weighting_alerts(object)) > 0L
         format(round(sa), big.mark = ",", scientific = FALSE)))
   }
 
-  # Very small response propensities blow up the 1/p weights; flag it.
-  pm <- attr(diag, "p_min")
-  if (!is.null(pm) && is.finite(pm) && pm < 0.01)
+  # Very small propensities blow up the weight; flag it. Which weight, and among whom,
+  # depends on the step: the nonresponse steps apply 1/p to respondents, while
+  # step_pseudoweight() applies the participation odds (1 - p)/p to the non-probability
+  # sample. Naming the inverse in a step that never takes one sends the user looking for
+  # the wrong thing, so the step marks its own diagnostics and the alert follows.
+  pm   <- attr(diag, "p_min")
+  odds <- isTRUE(attr(diag, "odds"))
+  # NP-08. For the participation odds the LEVEL of p is the participation fraction, not a
+  # response rate: a sample that is 6% of the pool gives p ~ 0.06 for everyone and an
+  # inflation of 15x for everyone, which is what the method is for. So the odds path is
+  # judged on the DISPERSION of the applied factor -- the design effect it contributes on
+  # its own -- and the absolute 0.01 threshold is kept for the nonresponse path, where p
+  # really is a response rate and lives between 0.5 and 0.9. Threshold measured: over a
+  # correctly specified logit with the participation fraction from 8% to 82% and genuine
+  # heterogeneity from none to strong, deff stays at or below 1.09 while the inflation is
+  # near-uniform and reaches 1.5-3.8 once a few units carry the sample. 1.5 is where the
+  # step starts costing a third of the effective sample size.
+  dfx <- attr(diag, "psw_deff")
+  if (odds && !is.null(dfx) && is.finite(dfx) && dfx >= 1.5)
+    msgs <- c(msgs, sprintf(
+      paste0("The pseudo-weights are dispersed enough to cost sample size on their own: ",
+             "the participation odds (1 - p)/p contribute a design effect of %.2f, i.e. ",
+             "they reduce the effective sample size to %.0f%% of the %s non-probability ",
+             "units. The largest is %sx the typical one (min p = %.4f, participation ",
+             "fraction %.1f%%; at that fraction a uniform inflation would be %sx for every ",
+             "unit, which would cost nothing). A few units are carrying the sample. Review ",
+             "the propensity model, bin with `num_classes`, or trim with ",
+             "step_trim_weights()."),
+      dfx, 100 / dfx,
+      format(attr(diag, "n_np") %||% NA_integer_, big.mark = ","),
+      format(round(attr(diag, "psw_ratio")), big.mark = ","), pm,
+      100 * attr(diag, "psw_f"),
+      format(round((1 - attr(diag, "psw_f")) / attr(diag, "psw_f")), big.mark = ",")))
+  if (!odds && !is.null(pm) && is.finite(pm) && pm < 0.01)
     msgs <- c(msgs, sprintf(
       paste0("Very small response propensities (min p = %.4f among respondents) ",
              "produce extreme 1/p weights (up to %sx). Check the propensity model, ",
              "or trim with step_trim_weights()."),
       pm, format(round(1 / pm), big.mark = ",", scientific = FALSE)))
+
+  # N-02. The point weights are unaffected by this, so it is a note on the recipe rather
+  # than a defect in the weights: it says which assumption the variance will rest on,
+  # where the person reading the report will see it, before they compute one.
+  if (isTRUE(attr(diag, "ref_no_reps")))
+    msgs <- c(msgs, paste0(
+      "The reference sample carries no replicate weights. The pseudo-weights ",
+      "themselves are unaffected, but any variance computed from this recipe will ",
+      "treat the reference as the POPULATION -- its weighted totals as known values, ",
+      "not estimates. If the reference really is a frame or a census, that is correct. ",
+      "If it is a survey, the standard errors will be underestimated. Pass its ",
+      "replicate weights through reference_sample(replicates =)."))
 
   # NP-01 mirror: for a pseudo-weight (participation odds (1 - p)/p) a participation
   # propensity near 1 sends the pseudo-weight toward 0, so the unit all but drops out
@@ -544,5 +612,69 @@ collect_weights <- function(object, drop_zero = TRUE,
   # zeros (the "dropped" marker); negative weights are active and are kept, so the
   # data.frame total matches sum(final_weight).
   if (drop_zero) out <- out[which(.wf_active(object$final_weight)), , drop = FALSE]
+  out
+}
+
+# --- N3: does the final weight still keep the totals a step fixed? ------------
+# Every calibration-like step records `target` and `achieved` in its diagnostics, and
+# those are true of the weight AT THAT MOMENT. Nothing re-reads them at the end, so a
+# step that rescales, rounds or trims afterwards can throw the constraints away while
+# the report keeps showing the calibration in green. Measured: calibrating to N = 1,570
+# and then adding step_rescale() leaves the weights summing to 400 (the sample size),
+# with the calibration's own table still reading target 1570 / achieved 1570 and not one
+# alert raised.
+#
+# The check is deliberately narrow: the population size each calibration fixed, against
+# the sum of the final weights. That is the one constraint every calibration flavour
+# declares (the intercept for linear/GREG and model calibration, the sum of any margin's
+# targets for raking and post-stratification), it needs no design matrix to recompute,
+# and it catches the whole family of order mistakes. A step that legitimately preserves
+# the total (step_round(method = "preserve_total"), trimmed calibration) stays silent.
+.wf_target_N <- function(step) {
+  dg <- step$diagnostics
+  if (!is.data.frame(dg) || !nrow(dg) || !"target" %in% names(dg)) return(NA_real_)
+  # Skip only a step that already reported it could not meet its targets (that is its
+  # own alert). Post-stratification is exact by construction and carries no flag at
+  # all, so a missing attribute must not be read as a failure.
+  if (identical(attr(dg, "converged"), FALSE)) return(NA_real_)
+  key <- if ("variable" %in% names(dg)) "variable" else if ("constraint" %in% names(dg)) "constraint" else NULL
+  if (is.null(key)) return(NA_real_)
+  k <- as.character(dg[[key]])
+  # linear / GREG / model calibration / CRE: the intercept IS the population size
+  ic <- which(k == "(Intercept)")
+  if (length(ic)) return(sum(as.numeric(dg$target[ic])))  # summed over `by` domains
+  # raking / post-stratification: one row per category, so a single margin sums to N
+  if (!"category" %in% names(dg)) return(NA_real_)
+  first <- k[1]
+  rows  <- if ("domain" %in% names(dg)) k == first else k == first
+  N <- sum(as.numeric(dg$target[rows]), na.rm = TRUE)
+  if (is.finite(N) && N > 0) N else NA_real_
+}
+
+.wf_check_calib_invariant <- function(steps, w_final) {
+  out <- character(0)
+  if (!length(steps)) return(out)
+  tot <- tryCatch(sum(w_final[is.finite(w_final)]), error = function(e) NA_real_)
+  if (!is.finite(tot)) return(out)
+  for (i in seq_along(steps)) {
+    st <- steps[[i]]
+    if (!inherits(st, c("step_calibrate", "step_model_calibration", "step_cre",
+                        "step_trim_calibrated"))) next
+    if (i == length(steps)) next                       # nothing ran after it
+    N <- tryCatch(.wf_target_N(st), error = function(e) NA_real_)
+    if (!is.finite(N) || N <= 0) next
+    dev <- abs(tot / N - 1)
+    if (dev <= 1e-6) next
+    later <- vapply(steps[(i + 1L):length(steps)], function(s) class(s)[1], character(1))
+    out <- c(out, sprintf(paste0(
+      "[%s] this step calibrated the weights to a population of %s, but the FINAL weights ",
+      "sum to %s (%+.1f%%): the step(s) that ran after it (%s) did not preserve the totals ",
+      "it fixed. The step's own diagnostics still read target == achieved, because they ",
+      "describe the weight at the moment it ran -- they are not re-checked at the end. ",
+      "Move the later step before the calibration, use a totals-preserving variant, or ",
+      "drop it."),
+      class(st)[1], format(round(N), big.mark = ","), format(round(tot), big.mark = ","),
+      100 * (tot / N - 1), paste(unique(later), collapse = ", ")))
+  }
   out
 }

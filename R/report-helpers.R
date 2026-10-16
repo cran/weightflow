@@ -204,6 +204,8 @@
                `reference units`     = "unidades de referencia",
                `min propensity`      = "propensi\u00f3n m\u00ednima",
                `pseudo-weight sum`   = "suma de pseudo-pesos",
+               `reference population` = "poblaci\u00f3n de la referencia",
+               `sum / reference`     = "suma / referencia",
                `mean pseudo-weight`  = "pseudo-peso medio"))
 
 .wf_revalue <- function(df, lang) {

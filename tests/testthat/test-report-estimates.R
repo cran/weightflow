@@ -17,7 +17,7 @@ cre_pair <- function() {
     step_cre(previous = NULL, status = lf_status, formula = ~ sex,
              totals = xtot(m1), status_ref = "inact")
   s2 <- weighting_spec(m2, base_weights = pw) |>
-    step_cre(previous = prep(s1), status = lf_status, composite = list(NULL, "sex"),
+    step_cre(previous = prep(s1), rescale_previous = TRUE, status = lf_status, composite = list(NULL, "sex"),
              id_unit = c("household_id", "person_no"), formula = ~ sex, totals = xtot(m2),
              alpha = 2/3, status_ref = "inact")
   list(s1 = s1, s2 = s2)

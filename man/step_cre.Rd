@@ -16,12 +16,14 @@ step_cre(
   birth = NULL,
   alpha = 2/3,
   overlap = "auto",
+  rescale_previous = FALSE,
   on_missing_prev = c("carry_backward", "zero"),
   cluster = NULL,
   equal_within_cluster = FALSE,
   calfun = c("linear", "logit", "raking"),
   bounds = NULL,
   rotation_group = NULL,
+  n_groups = NULL,
   status_ref = NULL,
   id = NULL
 )
@@ -58,7 +60,13 @@ named list with \code{count}).}
 
 \item{birth}{expression (evaluated in the current data) that is TRUE for the birth
 rotation group (the units with no \code{t-1} value to carry). If \code{NULL}, birth units
-are those not found in \code{previous} by \code{id_unit}.}
+are those not found in \code{previous} by \code{id_unit} -- which means a key that fails to
+link is indistinguishable from a genuine entrant, and a broken \code{id_unit} then looks
+like an enormous rotation while the change correction quietly stops working. The
+step warns when the implied overlap falls below half (or below \code{overlap} minus ten
+points, when \code{overlap} is given as a number) and errors below 2\%, but the only way
+to separate the two properly is to declare \code{birth} yourself, or to pass the design's
+nominal \code{overlap} so the check has something real to compare against.}
 
 \item{alpha}{MR1/MR2 mixing constant between 0 and 1. \code{alpha = 0} targets the
 level only (MR1), \code{alpha = 1} the change only (MR2). Default 2/3 (Chen and Liu 2002).}
@@ -66,6 +74,17 @@ level only (MR1), \code{alpha = 1} the change only (MR2). Default 2/3 (Chen and 
 \item{overlap}{the overlap rate used by the MR2 carry-backward correction: "auto"
 (default) estimates it as the \code{w_nr}-weighted overlap fraction, or a number
 (e.g. 5/6, the nominal LFS/ECH rate).}
+
+\item{rescale_previous}{put the composite block on the current wave's population
+scale: \verb{Zhat <- Zhat * N_t / Nhat_\{t-1\}} (equivalently, calibrate the composite
+auxiliaries on proportions). \code{Zhat} is a total estimated with the previous wave's
+weights, so it lives on \verb{Nhat_\{t-1\}} while \code{totals} fixes this wave's \code{N_t}; the
+identity that keeps the composite block a smoother rather than a level shift
+assumes the two agree. When they differ, the whole gap is discharged onto the
+status estimate with every constraint met and \code{converged = TRUE}. \code{FALSE}
+(default) keeps the totals as given and warns when the two scales differ by more
+than 1\%; the better fix is to calibrate both waves to the same series of
+population projections.}
 
 \item{on_missing_prev}{how to treat non-birth units without a valid \code{t-1} status
 (new household members, newly of working age): "carry_backward" (default; set
@@ -86,6 +105,18 @@ sec. 8.4.1, \verb{sum_\{i in s_g\} w_i = N_PET / 6}; LFS sec. 6.3.1). \code{N} i
 the intercept target in \code{totals} and \code{G} is the number of groups; the last
 group is left implied (its total follows from the others and \code{N}), so \code{G - 1}
 constraints are added to the demographic block. \code{NULL} (default) omits them.}
+
+\item{n_groups}{the number of rotation groups the \strong{design} has, e.g. \code{6}. Only
+used with \code{rotation_group}, and worth giving: \code{G} is a property of the design, not
+of who answered this wave, and the target \code{N / G} is wrong the moment the two
+differ. If a group has no active units -- fully attrited, or a domain with no
+respondents in it -- and \code{G} is read off the sample, every remaining group is
+calibrated to \code{N / (G - 1)}, i.e. a whole group's population shared out among the
+others, while the intercept still targets \code{N}. The step refuses that rather than
+solving it, because the two constraints cannot both hold. When \code{n_groups} is not
+given, \code{G} comes from the column's factor levels (which survive a level going
+empty); a character column carries no such record, so the step warns that it had to
+read \code{G} off the wave.}
 
 \item{status_ref}{the status level held as reference (dropped from each cell block
 to avoid the mechanical collinearity between the full status indicators and the
@@ -131,18 +162,23 @@ so every household member shares one final weight.
 t1 <- subset(panel_ine, wave == 1 & disposition == "R")
 t2 <- subset(panel_ine, wave == 2 & disposition == "R")
 t1$sex <- factor(t1$sex); t2$sex <- factor(t2$sex)
-Xtot <- function(d) colSums(d$pw * stats::model.matrix(~ sex, data = d))
+
+# ONE population vector for both waves, as a series of projections would be.
+# `Zhat` is a total on the previous wave's scale, so calibrating each wave to its
+# own design-weighted total puts two population scales in one system and the
+# difference lands on the status estimate (see `rescale_previous`).
+Xpop <- colSums(t1$pw * stats::model.matrix(~ sex, data = t1))
 
 # seed wave: no previous month, so step_cre() reduces to a linear calibration to X
 seed <- weighting_spec(t1, base_weights = pw) |>
   step_cre(previous = NULL, status = lf_status, formula = ~ sex,
-           totals = Xtot(t1), status_ref = "inact") |>
+           totals = Xpop, status_ref = "inact") |>
   prep()
 
 # composite wave: augment X with the previous-wave status, country-level and by sex
 fit2 <- weighting_spec(t2, base_weights = pw) |>
   step_cre(previous = seed, status = lf_status, composite = list(NULL, "sex"),
-           id_unit = c("household_id", "person_no"), formula = ~ sex, totals = Xtot(t2),
+           id_unit = c("household_id", "person_no"), formula = ~ sex, totals = Xpop,
            alpha = 2/3, status_ref = "inact") |>
   prep()
 fit2

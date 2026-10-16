@@ -16,9 +16,25 @@ panel_estimate(
   df = NULL
 )
 
-panel_mean(wb, variable, contrast = NULL, waves = NULL, level = 0.95)
+panel_mean(
+  wb,
+  variable,
+  contrast = NULL,
+  waves = NULL,
+  level = 0.95,
+  ci_type = c("normal", "t"),
+  df = NULL
+)
 
-panel_total(wb, variable, contrast = NULL, waves = NULL, level = 0.95)
+panel_total(
+  wb,
+  variable,
+  contrast = NULL,
+  waves = NULL,
+  level = 0.95,
+  ci_type = c("normal", "t"),
+  df = NULL
+)
 }
 \arguments{
 \item{wb}{a \code{weightflow_wave_boot} from \code{\link[=wave_bootstrap]{wave_bootstrap()}} or a \code{weightflow_wave_jack}

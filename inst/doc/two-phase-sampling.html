@@ -421,8 +421,9 @@ and <strong>undercovers</strong>.</p>
 automatically – no extra arguments:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>boot <span class="ot">&lt;-</span> <span class="fu">bootstrap_weights</span>(spec, <span class="at">replicates =</span> <span class="dv">200</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">progress =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="fu">boot_mean</span>(boot, <span class="st">&quot;income&quot;</span>)</span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt;   estimate        se ci_lower ci_upper</span></span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; 1 14.49937 0.2037054 14.10012 14.89863</span></span></code></pre></div>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; boot_mean(): with a two-phase design the phase-1 multiplier is uncentred. It self-centres for a ratio only to first order, so this SE is mildly conservative (measured +5-8% in simulation); read it as a slight upper bound.</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt;   estimate        se ci_lower ci_upper</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; 1 14.49937 0.2037054 14.10012 14.89863</span></span></code></pre></div>
 <p>The per-unit resampling factor has variance <span class="math inline">\((1 - f_1)\,\pi_2 + (1 - \pi_2)\)</span>: the
 phase-1 component (seen through the subsample) plus the phase-2
 conditional component. The two add – a naive <em>product</em> of two
@@ -519,11 +520,16 @@ factor is a Hansen-Hurwitz (uncentred) multiplier: its variance
 contribution enters through the sum of squares <span class="math inline">\(\sum d_k (w_k y_k)^2\)</span>, not the
 stratum-centred Rao-Wu form <span class="math inline">\(\sum
 \frac{n_h}{n_h-1}\sum (z-\bar z)^2\)</span>. For a <strong>mean or
-ratio</strong> the factor cancels between numerator and denominator, so
-the estimate self-centres and the variance is right. For a
-<strong>total</strong> it does not cancel: the phase-1 component is then
-<em>materially</em> conservative and can overestimate the variance
-substantially (not merely “slightly”). <code>boot_total()</code> and
+ratio</strong> the factor cancels between numerator and denominator to
+first order, so the estimate self-centres and the variance is
+<em>approximately</em> right — but the Gamma coupling is skewed and the
+second-order term of the ratio does not cancel, which leaves the SE
+mildly conservative (measured +5–8 % in simulation).
+<code>boot_mean()</code> says so in a message; read its SE as a slight
+upper bound. For a <strong>total</strong> it does not cancel: the
+phase-1 component is then <em>materially</em> conservative and can
+overestimate the variance substantially (not merely “slightly”).
+<code>boot_total()</code> and
 <code>two_phase_variance(estimator = &quot;total&quot;)</code> therefore warn, and
 their SE should be read as an upper bound; use the
 <code>&quot;mean&quot;</code>/ratio path, or an exact stratified

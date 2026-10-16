@@ -16,7 +16,7 @@ test_that("delta counts linked non-births, not every non-birth", {
   key <- function(d) paste(d$household_id, d$person_no)
   t2$birth <- !(key(t2) %in% key(t1))
   fit <- function(d) weighting_spec(d, base_weights = pw) |>
-    step_cre(previous = seed, status = lf_status, composite = list(NULL),
+    step_cre(previous = seed, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), birth = birth,
              formula = ~ sex, totals = Xtot(t2), alpha = 2/3, status_ref = "inact") |> prep()
   lk <- function(f) attr(f$steps[[1]]$diagnostics, "cre_link")
@@ -58,7 +58,7 @@ test_that("a unit linked to a zero-weight previous row is not counted as overlap
   expect_lt(n_active, n_all)                          # there ARE inactive previous rows
 
   f2 <- suppressWarnings(weighting_spec(t2, base_weights = pw) |>
-    step_cre(previous = prev, status = lf_status, composite = list(NULL),
+    step_cre(previous = prev, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), formula = ~ sex,
              totals = Xtot(t2), alpha = 2/3, status_ref = "inact") |> prep())
   lk <- attr(f2$steps[[1]]$diagnostics, "cre_link")
@@ -80,7 +80,7 @@ test_that("the level estimate does not move with the scale of the incoming weigh
   emp <- function(k) {
     d <- t2; d$pw2 <- d$pw * k                       # same design, different units
     f <- suppressWarnings(weighting_spec(d, base_weights = pw2) |>
-      step_cre(previous = seed, status = lf_status, composite = list(NULL),
+      step_cre(previous = seed, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
                id_unit = c("household_id", "person_no"), formula = ~ sex,
                totals = Xtot(t2), alpha = 0, status_ref = "inact") |> prep())
     sum(collect_weights(f)$.weight * (d$lf_status == "emp"), na.rm = TRUE)
@@ -103,7 +103,7 @@ test_that("`birth` must be a scalar or one value per unit", {
     step_cre(previous = NULL, status = lf_status, formula = ~ sex,
              totals = Xtot(t1), status_ref = "inact") |> prep()
   mk <- function(b) weighting_spec(t2, base_weights = pw) |>
-    step_cre(previous = seed, status = lf_status, composite = list(NULL),
+    step_cre(previous = seed, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), birth = b, formula = ~ sex,
              totals = Xtot(t2), alpha = 2/3, status_ref = "inact") |> prep()
   expect_error(mk(c(TRUE, FALSE, TRUE)), "one value per unit")
@@ -282,7 +282,7 @@ test_that("a step_cre whose `previous` is not the preceding wave is not injected
     step_cre(previous = NULL, status = lf, formula = ~ sex,
              totals = Xtot(d1), status_ref = "inact") |> prep()
   cre <- function(d, prev) weighting_spec(d, base_weights = pw) |>
-    step_cre(previous = prev, status = lf, composite = list(NULL), id_unit = "id",
+    step_cre(previous = prev, rescale_previous = TRUE, status = lf, composite = list(NULL), id_unit = "id",
              formula = ~ sex, totals = Xtot(d), status_ref = "inact")
   f2 <- prep(cre(d2, f1))
   run <- function(prev3) wave_bootstrap(
@@ -333,11 +333,15 @@ test_that("the coordinated engines reject NA in strata or psu", {
     if (na_psu) d$psu[sample(nrow(d), 12)] <- NA
     weighting_spec(d, base_weights = pw)
   }
-  expect_no_error(wave_bootstrap(list(t1 = mk(1), t2 = mk(2)), replicates = 30,
-                                 strata = "stratum", psu = "psu", seed = 1, progress = FALSE))
+  # suppressWarnings: this fixture's strata change PSU count between waves, which now
+  # raises the coordination-drift warning (VAR9-07); the assertion here is about NA ids.
+  expect_no_error(suppressWarnings(
+    wave_bootstrap(list(t1 = mk(1), t2 = mk(2)), replicates = 30,
+                   strata = "stratum", psu = "psu", seed = 1, progress = FALSE)))
   # every row with psu = NA pastes into the same key, so they resample as one unit
-  expect_error(wave_bootstrap(list(t1 = mk(1), t2 = mk(2, TRUE)), replicates = 30,
-                              strata = "stratum", psu = "psu", seed = 1, progress = FALSE),
+  expect_error(suppressWarnings(
+    wave_bootstrap(list(t1 = mk(1), t2 = mk(2, TRUE)), replicates = 30,
+                   strata = "stratum", psu = "psu", seed = 1, progress = FALSE)),
                "missing values")
   expect_error(wave_jackknife(list(t1 = mk(1), t2 = mk(2, TRUE)), strata = "stratum",
                               psu = "psu", progress = FALSE), "missing values")

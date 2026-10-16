@@ -82,6 +82,17 @@
         "magnitud era inferior a la mitad de la precisi\u00f3n de redondeo, p. ej. un peso de ",
         "calibraci\u00f3n peque\u00f1o o negativo); ya no figuran en collect_weights(). Conviene ",
         "redondear a m\u00e1s decimales, o resolver esos pesos antes de redondear."), s, fixed = TRUE))
+    # Very small participation propensities -- the pseudo-weight variant (R/prep.R)
+    if (grepl("Very small participation propensities", s, fixed = TRUE)) {
+      s <- sub("Very small participation propensities (min p = ",
+        "Propensiones de participaci\u00f3n muy bajas (m\u00edn. p = ", s, fixed = TRUE)
+      s <- sub(" in the non-probability sample) produce extreme pseudo-weights (the participation odds (1 - p)/p reach ",
+        " en la muestra no probabil\u00edstica) producen pseudo-pesos extremos (las odds de participaci\u00f3n (1 - p)/p llegan a ",
+        s, fixed = TRUE)
+      return(sub("x). Check the propensity model, or trim with step_trim_weights().",
+        "x). Conviene revisar el modelo de propensi\u00f3n, o recortar con step_trim_weights().",
+        s, fixed = TRUE))
+    }
     # Very small response propensities (R/prep.R)
     if (grepl("Very small response propensities", s, fixed = TRUE)) {
       s <- sub("Very small response propensities (min p = ",
@@ -530,7 +541,7 @@
       else .t("calibration to population totals", "calibraci\u00f3n a totales poblacionales", lang))
   }
   if (inherits(step, "step_model_calibration"))
-    return(.t("model-assisted calibration", "calibraci\u00f3n asistida por modelo", lang))
+    return(.t("model calibration", "calibraci\u00f3n basada en modelos", lang))
   if (inherits(step, "step_trim_calibrated"))
     return(.t("calibration-preserving weight trimming", "recorte de pesos que preserva la calibraci\u00f3n", lang))
   if (inherits(step, "step_trim_weights"))
@@ -574,8 +585,8 @@
 .ref_totals_phrase <- function(step, lang) {
   pop <- step$population
   if (is.null(pop) || !inherits(pop, "wf_reference_sample")) return("")
-  n_ref   <- length(attr(pop, "wf_ref_weights"))
-  has_rep <- !is.null(attr(pop, "wf_ref_replicates"))
+  n_ref   <- length(.wf_ref_weights(pop))
+  has_rep <- !is.null(.wf_ref_reps(pop))
   vclause <- if (has_rep)
     .t("Because the totals are estimates, their sampling variability can be propagated through the recipe-aware bootstrap, where each replicate re-estimates the totals from the paired reference replicate (Opsomer and Erciulescu 2021); the delete-a-PSU jackknife has no such pairing and treats the totals as fixed.",
        "Como los totales son estimaciones, su variabilidad muestral puede propagarse por el bootstrap que recalcula toda la receta, donde cada r&eacute;plica reestima los totales desde la r&eacute;plica pareada de la referencia (Opsomer y Erciulescu 2021); el jackknife borra-una-UPM no tiene ese pareo y trata los totales como fijos.", lang)
@@ -679,8 +690,8 @@
       lang), " ", .deff_phrase(de1, de2, lang), .ref_totals_phrase(step, lang))
   } else if (inherits(step, "step_model_calibration")) {
     txt <- paste0(.t(
-      "Model-assisted (Wu-Sitter) calibration was applied: predictions of the outcome model were used as auxiliaries and calibrated to their population totals, borrowing strength from the predictive model.",
-      "Se aplic\u00f3 calibraci\u00f3n asistida por modelo (Wu-Sitter): las predicciones del modelo de resultado se usaron como auxiliares y se calibraron a sus totales poblacionales, aprovechando la fuerza del modelo predictivo.",
+      "Model calibration (Wu-Sitter) was applied: predictions of the outcome model were used as auxiliaries and calibrated to their population totals, borrowing strength from the predictive model.",
+      "Se aplic\u00f3 calibraci\u00f3n basada en modelos (Wu-Sitter): las predicciones del modelo de resultado se usaron como auxiliares y se calibraron a sus totales poblacionales, aprovechando la fuerza del modelo predictivo.",
       lang), " ", .deff_phrase(de1, de2, lang), .ref_totals_phrase(step, lang))
   } else if (inherits(step, "step_trim_calibrated")) {
     # Preserved totals are ONLY the formula's auxiliaries; `by` is the subgroup
@@ -777,8 +788,8 @@
          sprintf(" Las propensiones se agruparon en %d clases para estabilizar el pseudo-peso.", step$num_classes), lang)
       else ""
     txt <- .t(
-      sprintf("The non-probability sample was pooled with the probability reference and a participation-propensity model (<strong>%s</strong> algorithm%s) was fitted over %s. Each non-probability unit received the pseudo-weight (1 - p)/p, the participation odds, which inflates it to the population so the weights sum to the reference's estimated population size (Elliott and Valliant 2017); the reference trains the model and is then dropped.%s Common support between the sample and the reference is the central assumption; see the propensity diagnostics below.", step$engine, cf, vp, cls),
-      sprintf("La muestra no probabil\u00edstica se combin\u00f3 con la referencia probabil\u00edstica y se ajust\u00f3 un modelo de propensi\u00f3n de participaci\u00f3n (algoritmo <strong>%s</strong>%s) sobre %s. Cada unidad no probabil\u00edstica recibi\u00f3 el pseudo-peso (1 - p)/p, las probabilidades relativas de participaci\u00f3n, que la expanden a la poblaci\u00f3n de modo que los pesos suman el tama\u00f1o poblacional estimado por la referencia (Elliott y Valliant 2017); la referencia entrena el modelo y luego se descarta.%s El soporte com\u00fan entre la muestra y la referencia es el supuesto central; ver los diagn\u00f3sticos de propensi\u00f3n abajo.", step$engine, cf, vp, cls),
+      sprintf("The non-probability sample was pooled with the probability reference and a participation-propensity model (<strong>%s</strong> algorithm%s) was fitted over %s. Each non-probability unit received the pseudo-weight (1 - p)/p, the participation odds, which inflates it to the population (the adjusted logistic propensity of Wang, Valliant and Li 2021, after Elliott and Valliant 2017). Their sum <em>estimates</em> the population the reference estimates -- unbiased for it, not equal to it, and it moves from sample to sample; the reported ratio is the diagnostic. The reference trains the model and is then dropped.%s Common support between the sample and the reference is the central assumption; see the propensity diagnostics below.", step$engine, cf, vp, cls),
+      sprintf("La muestra no probabil\u00edstica se combin\u00f3 con la referencia probabil\u00edstica y se ajust\u00f3 un modelo de propensi\u00f3n de participaci\u00f3n (algoritmo <strong>%s</strong>%s) sobre %s. Cada unidad no probabil\u00edstica recibi\u00f3 el pseudo-peso (1 - p)/p, las chances (odds) de participaci\u00f3n, que la expanden a la poblaci\u00f3n (propensi\u00f3n log\u00edstica ajustada de Wang, Valliant y Li 2021, sobre Elliott y Valliant 2017). Su suma <em>estima</em> el tama\u00f1o poblacional que estima la referencia: es insesgada, no igual, y se mueve de una muestra a otra; la raz\u00f3n reportada es el diagn\u00f3stico. La referencia entrena el modelo y luego se descarta.%s El soporte com\u00fan entre la muestra y la referencia es el supuesto central; ver los diagn\u00f3sticos de propensi\u00f3n abajo.", step$engine, cf, vp, cls),
       lang)
   } else if (inherits(step, "step_nr_sensitivity")) {
     txt <- .t("A proxy pattern-mixture sensitivity analysis (Andridge and Little 2011) was run. It does not change the weights: it reports how far the study mean could move under nonignorable nonresponse, as an ignorance interval indexed by a single parameter. See the sensitivity block.",

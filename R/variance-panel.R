@@ -129,6 +129,32 @@
 # (`injected`) vs be silently left at their fixed point `previous` (`skipped`). A skip means
 # the reported variance treats Zhat as fixed -> anticonservative, the exact error this
 # module exists to avoid, so wave_bootstrap()/wave_jackknife() warn and expose the counts.
+# Which carry of the chain holds the wave this recipe's step_cre actually declares as
+# `previous`? wave_step() used to take the lag-1 carry unconditionally (VAR-20): a recipe
+# whose step_cre points two periods back then got the immediately preceding wave's
+# replicate weights whenever the row counts happened to agree, which is VAR-12 reached by
+# a different route. Match the carry by CONTENT, the way wave_bootstrap() does, and return
+# both the replicates and the fingerprint so the injection can check alignment itself.
+# No match -> lag 1 and its own fingerprint, which .wf_cre_prev_ok then rejects, so the
+# step is left at its fixed `previous` and the caller gets the FIXED warning.
+.wf_cre_prev_carry <- function(spec, prev) {
+  if (!length(prev)) return(list(reps = NULL, fp = NULL))
+  fp_of <- function(p) p$data_fp %||%
+    (if (!is.null(p$data)) .wf_data_fp(p$data) else NULL)   # carries written before 1.3.1
+  want <- NULL
+  for (s in spec$steps) {
+    if (!inherits(s, "step_cre") || is.null(s$previous$data)) next
+    want <- .wf_data_fp(s$previous$data); break
+  }
+  if (!is.null(want)) {
+    for (p in prev) {
+      f <- fp_of(p)
+      if (!is.null(f) && identical(f, want)) return(list(reps = p$reps, fp = f))
+    }
+  }
+  list(reps = prev[[1L]]$reps, fp = fp_of(prev[[1L]]))
+}
+
 .wf_cre_inject_status <- function(spec, w_prev_len, prev_fp = NULL) {
   injected <- 0L; skipped <- 0L
   for (s in spec$steps) {
@@ -165,6 +191,75 @@
 # Confidence-interval multiplier for the panel estimators: z (normal, default) or Student t
 # with `df` degrees of freedom. With few PSUs the normal interval is too narrow, so `"t"`
 # uses the design df (total PSUs minus strata) stored on the coordinated object. (VAR-14)
+# The uniform-based coordination is exact only while a stratum keeps the same number of
+# PSUs across the waves. The sequential multinomial spends a shared budget `rem` in PSU
+# order, so with different (n_h, m_h) the conditionals diverge: the first PSU still
+# coordinates almost exactly and the drift grows with the rank, and the LAST PSU of each
+# wave takes whatever is left over and cannot coordinate at all. Measured on the draw
+# itself, 200,000 replicates, six shared PSUs, n_h 10 -> 6:
+#
+#   corr(lambda1, lambda2) by rank   0.961  0.948  0.919  0.867  0.760  0.277
+#   the same with n_h unchanged      1.000  1.000  1.000  1.000  1.000  1.000
+#
+# The lost covariance inflates the variance of a net change (the audit's design-level
+# Monte Carlo: covariance 16% low, V(change) 48% high, SE +21.5%, against +3.1% for the
+# coordinated jackknife on the same design). It is conservative, not anticonservative,
+# but it will hide real movements.
+#
+# What it is NOT (measured 2026-09-28, against a design-level Monte Carlo with a known
+# truth, 20,000 sampling replications, the schemes compared on the same fixed sample):
+#
+#   * It is not a defect of THIS coupling. The multiplicity transfer of wave_step() --
+#     the Statistics Canada route, which an earlier version of this comment said "does
+#     not have this problem" -- recovers the same covariance: 0.846 of the truth against
+#     0.841 for the sequential multinomial. It has the problem too.
+#   * It is not fixable by coupling harder. With n_h changed the two waves' per-PSU
+#     marginals are Binomial(m_1, 1/n_1) and Binomial(m_2, 1/n_2), different laws, so the
+#     comonotone coupling is the best any scheme can do and it caps the per-PSU
+#     correlation at about 0.96, not 1. The legacy `binom` draw attains that cap for
+#     every PSU and is still far worse overall, because without the multinomial's
+#     centring the covariance of a TOTAL comes out negative.
+#   * It is not fixed by resampling the design's PSU set instead of the wave's (letting
+#     the non-responding PSUs enter the draw with nothing and re-adjusting inside each
+#     replicate). That recovers more covariance, 0.746 against 0.684 on that design, and
+#     still ends up worse on V(change), 1.57 against 1.33, because the per-replicate
+#     response-rate adjustment adds more to the level variance than the covariance gains.
+#
+# The reading those three leave: the between-wave covariance travels only through the
+# PSUs the waves share, and when a large share of them is not shared the signal is not
+# there for any coupling to recover. Treat this as a known limitation of the rescaling
+# bootstrap for this contrast, not as a bug with a pending fix. wave_jackknife() is
+# deterministic and the audit measured it at +3.1% on its design.
+.wf_warn_nh_drift <- function(specs, strata, psu_of, map) {
+  if (length(specs) < 2L) return(invisible(NULL))
+  st_of <- function(sp) if (is.null(strata)) rep("1", nrow(sp$data))
+                        else unname(map[as.character(sp$data[[strata]])])
+  per <- lapply(specs, function(sp)
+    vapply(split(psu_of(sp), st_of(sp)), function(z) length(unique(z)), integer(1)))
+  all_st <- unique(unlist(lapply(per, names), use.names = FALSE))
+  drift <- Filter(Negate(is.null), lapply(all_st, function(h) {
+    k <- vapply(per, function(v) if (h %in% names(v)) v[[h]] else NA_integer_, integer(1))
+    k <- k[!is.na(k)]
+    if (length(k) < 2L || length(unique(k)) == 1L || any(k < 2L)) NULL
+    else sprintf("'%s' (%s)", h, paste(k, collapse = " -> "))
+  }))
+  if (!length(drift)) return(invisible(NULL))
+  warning(sprintf(paste0(
+    "wave_bootstrap: %d stratum/strata change their number of PSUs between waves: %s. The ",
+    "coordination rests on per-PSU uniforms read through a sequential multinomial that ",
+    "spends the wave's own budget, so it is exact only while n_h is preserved: the first ",
+    "PSU of a stratum still coordinates almost exactly and the drift grows with the rank ",
+    "(measured correlation 0.96 down to 0.28 at n_h 10 -> 6). The lost covariance makes ",
+    "the variance of a net change too LARGE (measured +48%% in V, +21%% in SE), which is ",
+    "conservative but will hide real movements. This is a limitation of the rescaling ",
+    "bootstrap for a net change, not of this particular draw: the multiplicity transfer ",
+    "of wave_step() was measured against the same oracle and recovers the same covariance ",
+    "(0.85 of the truth, against 0.84 here). wave_jackknife() is deterministic and was ",
+    "measured at +3%% on the audit's design."),
+    length(drift), paste(utils::head(unlist(drift), 6L), collapse = "; ")), call. = FALSE)
+  invisible(NULL)
+}
+
 .wf_panel_cimult <- function(level, ci_type, df) {
   a <- 1 - (1 - level) / 2
   if (identical(ci_type, "t") && !is.null(df) && is.finite(df) && df >= 1)
@@ -363,6 +458,7 @@ wave_bootstrap <- function(specs, replicates = 500L, strata = NULL, psu = NULL,
   union_psu <- unique(unlist(psu_lists, use.names = FALSE))
   psu_rank  <- stats::setNames(seq_along(.wf_psu_order(psu_lists)), .wf_psu_order(psu_lists))
   lonely <- .wf_wave_lonely(specs, strata, psu, lonely_psu, "wave_bootstrap")
+  .wf_warn_nh_drift(specs, strata, psu_of, lonely$map)
   # Restore the caller's RNG state on exit: set.seed() here would otherwise leave the global
   # stream advanced, so an unrelated random draw after wave_bootstrap() would differ (the
   # single-sample bootstrap already does this). (VAR-10)
@@ -618,9 +714,11 @@ print.weightflow_change_by <- function(x, ...) {
 #' @param variable name of a numeric variable present in both waves.
 #' @export
 change_mean <- function(wb, variable, waves = NULL, level = 0.95,
+                        ci_type = c("normal", "t", "percentile"), df = NULL,
                         type = c("absolute", "relative"), by = NULL) {
   change_estimate(wb, function(w, d) stats::weighted.mean(d[[variable]], w, na.rm = TRUE),
-                  waves = waves, level = level, type = match.arg(type), by = by)
+                  waves = waves, level = level, type = match.arg(type), by = by,
+                  ci_type = match.arg(ci_type), df = df)
 }
 
 # ---------------------------------------------------------------------------
@@ -801,6 +899,16 @@ print.weightflow_wave_jack <- function(x, ...) {
   wv <- if (is.null(waves)) wj$waves[1:2] else as.character(waves)
   if (length(wv) != 2L || !all(wv %in% wj$waves))
     stop("`waves` must name two waves present in `wj`.", call. = FALSE)
+  # There is no replicate DISTRIBUTION to take quantiles of here: the delete-one
+  # jackknife is deterministic and gives a variance, not a sample of the statistic.
+  # `.wf_panel_cimult()` silently falls through to the normal multiplier for any
+  # ci_type that is not "t", so a percentile request used to return a z interval
+  # labelled as asked for. Say so instead.
+  if (identical(ci_type, "percentile"))
+    stop(paste0("`ci_type = \"percentile\"` needs a replicate distribution, and the coordinated ",
+                "delete-one jackknife is deterministic: it yields a variance, not a sample of ",
+                "the statistic. Use ci_type = \"normal\" or \"t\" here, or wave_bootstrap() if ",
+                "you want a percentile interval."), call. = FALSE)
   if (!is.null(by)) return(.change_by(wj, statistic, wv, level, type, by, ci_type, df))
   per <- lapply(wv, function(wave) {
     W <- wj$reps[[wave]]; d <- wj$data[[wave]]; mt <- wj$meta[[wave]]
@@ -821,9 +929,12 @@ print.weightflow_wave_jack <- function(x, ...) {
       idx <- which(mt$contrib & mt$stratum == h & is.finite(th))
       if (!length(idx)) next
       dev[idx] <- th[idx] - mean(th[idx])            # centre on stratum mean of delete-one
-      cf[idx]  <- (mt$nh[idx] - 1) / mt$nh[idx]
+      # (n_h - 1)/m_h over the SURVIVING replicates, as jkn_var() does in the
+      # single-stage path; (n_h - 1)/n_h biased the variance low whenever a
+      # delete-one replicate had failed. (MEDIO-09)
+      cf[idx]  <- (mt$nh[idx] - 1) / length(idx)
     }
-    list(hat = hat, dev = dev, cf = cf, contrib = mt$contrib)
+    list(hat = hat, dev = dev, cf = cf, contrib = mt$contrib & is.finite(th))
   })
   p1 <- per[[1]]; p2 <- per[[2]]
   V1  <- sum(p1$cf * p1$dev^2)
@@ -899,7 +1010,8 @@ level_estimate <- function(wb, statistic, wave = NULL, level = 0.95,
     for (h in unique(mt$stratum[mt$contrib])) {
       idx <- which(mt$contrib & mt$stratum == h & is.finite(th))
       if (!length(idx)) next
-      V <- V + (mt$nh[idx][1] - 1) / mt$nh[idx][1] * sum((th[idx] - mean(th[idx]))^2)
+      # (n_h - 1)/m_h over the surviving replicates (MEDIO-09)
+      V <- V + (mt$nh[idx][1] - 1) / length(idx) * sum((th[idx] - mean(th[idx]))^2)
     }
     method <- "jackknife"
   } else stop("`wb` must come from wave_bootstrap() or wave_jackknife().", call. = FALSE)
@@ -912,13 +1024,17 @@ level_estimate <- function(wb, statistic, wave = NULL, level = 0.95,
 #' @rdname level_estimate
 #' @param variable name of a numeric variable in the wave's data.
 #' @export
-level_mean <- function(wb, variable, wave = NULL, level = 0.95)
-  level_estimate(wb, function(w, d) stats::weighted.mean(d[[variable]], w, na.rm = TRUE), wave, level)
+level_mean <- function(wb, variable, wave = NULL, level = 0.95,
+                       ci_type = c("normal", "t"), df = NULL)
+  level_estimate(wb, function(w, d) stats::weighted.mean(d[[variable]], w, na.rm = TRUE),
+                 wave, level, ci_type = match.arg(ci_type), df = df)
 
 #' @rdname level_estimate
 #' @export
-level_total <- function(wb, variable, wave = NULL, level = 0.95)
-  level_estimate(wb, function(w, d) sum(w * d[[variable]], na.rm = TRUE), wave, level)
+level_total <- function(wb, variable, wave = NULL, level = 0.95,
+                        ci_type = c("normal", "t"), df = NULL)
+  level_estimate(wb, function(w, d) sum(w * d[[variable]], na.rm = TRUE),
+                 wave, level, ci_type = match.arg(ci_type), df = df)
 
 #' @export
 print.weightflow_level <- function(x, ...) {
@@ -932,9 +1048,11 @@ print.weightflow_level <- function(x, ...) {
 #' @rdname change_estimate
 #' @export
 change_total <- function(wb, variable, waves = NULL, level = 0.95,
+                         ci_type = c("normal", "t", "percentile"), df = NULL,
                          type = c("absolute", "relative"), by = NULL) {
   change_estimate(wb, function(w, d) sum(w * d[[variable]], na.rm = TRUE),
-                  waves = waves, level = level, type = match.arg(type), by = by)
+                  waves = waves, level = level, type = match.arg(type), by = by,
+                  ci_type = match.arg(ci_type), df = df)
 }
 
 #' @export
@@ -992,12 +1110,28 @@ print.weightflow_change <- function(x, ...) {
       th <- vapply(seq_len(ncol(Wt)), function(g) {
         w <- Wt[, g]; if (anyNA(w)) NA_real_ else as.numeric(statistic(w, d))
       }, numeric(1))
+      # A failed delete-one replicate (a calibration cell emptied by deleting a PSU is
+      # the ordinary case) left an NA in `th`. Without the is.finite() filter that
+      # .change_estimate_jack() and level_estimate() already apply, mean(th[idx]) was
+      # NA, every deviation in that stratum went NA, and panel_estimate() aborted with
+      # "missing value where TRUE/FALSE needed" -- an internal message naming neither
+      # the cause nor the wave -- on an object change_estimate() handled fine.
+      n_bad <- sum(mt$contrib & !is.finite(th))
+      if (n_bad > 0L)
+        warning(sprintf(paste0("panel_estimate (jackknife): %d delete-one replicate(s) in wave ",
+                               "'%s' were non-finite and were dropped from the variance. The ",
+                               "stratum contribution is rescaled over the surviving replicates."),
+                        n_bad, wave), call. = FALSE)
       dev <- rep(0, length(th)); cf <- rep(0, length(th))
       for (h in unique(mt$stratum[mt$contrib])) {
-        idx <- which(mt$contrib & mt$stratum == h)
-        dev[idx] <- th[idx] - mean(th[idx]); cf[idx] <- (mt$nh[idx] - 1) / mt$nh[idx]
+        idx <- which(mt$contrib & mt$stratum == h & is.finite(th))
+        if (!length(idx)) next
+        # (n_h - 1)/m_h, not (n_h - 1)/n_h: with m_h < n_h surviving replicates the
+        # partial sum still estimates the whole stratum contribution instead of
+        # biasing the variance low. Matches jkn_var() in the single-stage path.
+        dev[idx] <- th[idx] - mean(th[idx]); cf[idx] <- (mt$nh[idx] - 1) / length(idx)
       }
-      list(dev = dev, cf = cf, contrib = mt$contrib)
+      list(dev = dev, cf = cf, contrib = mt$contrib & is.finite(th))
     })
     Sigma <- matrix(0, W, W)
     for (i in seq_len(W)) for (j in i:W) {          # diag = V_w; off-diag over shared PSUs
@@ -1080,16 +1214,20 @@ panel_estimate <- function(wb, statistic, contrast = NULL, waves = NULL, level =
 #' @rdname panel_estimate
 #' @param variable name of a numeric variable present in every wave.
 #' @export
-panel_mean <- function(wb, variable, contrast = NULL, waves = NULL, level = 0.95) {
+panel_mean <- function(wb, variable, contrast = NULL, waves = NULL, level = 0.95,
+                       ci_type = c("normal", "t"), df = NULL) {
   panel_estimate(wb, function(w, d) stats::weighted.mean(d[[variable]], w, na.rm = TRUE),
-                 contrast = contrast, waves = waves, level = level)
+                 contrast = contrast, waves = waves, level = level,
+                 ci_type = match.arg(ci_type), df = df)
 }
 
 #' @rdname panel_estimate
 #' @export
-panel_total <- function(wb, variable, contrast = NULL, waves = NULL, level = 0.95) {
+panel_total <- function(wb, variable, contrast = NULL, waves = NULL, level = 0.95,
+                        ci_type = c("normal", "t"), df = NULL) {
   panel_estimate(wb, function(w, d) sum(w * d[[variable]], na.rm = TRUE),
-                 contrast = contrast, waves = waves, level = level)
+                 contrast = contrast, waves = waves, level = level,
+                 ci_type = match.arg(ci_type), df = df)
 }
 
 #' @export

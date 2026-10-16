@@ -10,6 +10,7 @@ step_pseudoweight(
   formula,
   engine = c("logit", "tree", "forest", "boost"),
   num_classes = NULL,
+  by = NULL,
   crossfit = NULL,
   crossfit_seed = NULL,
   id = NULL
@@ -38,6 +39,25 @@ e.g. \code{~ sex + age + region}.}
 fitted propensities into that many quantile classes and use the class-average
 pseudo-weight, which is more robust to a misspecified model.}
 
+\item{by}{NULL (default), or a single column name: fit \strong{one participation model per
+domain}, on that domain's units of both samples and on nothing else. The
+\code{reference} must carry the same domain column, and is split by it, so the
+pseudo-weights of a domain sum to that domain's reference total rather than to the
+national one -- which is what lets a following domain-partitioned calibration start
+from a coherent input weight. Use it when the participation mechanism differs
+across domains (a covariate whose effect changes sign by region is the clear case),
+where a single \emph{additive} national model misses the domain totals in both directions
+-- measured on three domains with the slope changing sign: \code{~ dom + x} landed at
+4,258 / 3,530 / 4,803 against a truth of 4,022 / 4,033 / 3,945.
+
+For \code{engine = "logit"} this is the fully interacted national model, \code{~ dom * (...)},
+and gives the same weights to numerical precision -- not a different estimator, but
+the practicable way to fit it: the interactions are never written out, a domain
+without enough units on either side is named instead of quietly degrading the whole
+fit, and the tree, forest and boost engines have no interaction syntax at all, so
+there segmenting is the only route. Each domain needs enough units on \strong{each} side
+to fit its own model; those that do not are reported by name.}
+
 \item{crossfit, crossfit_seed}{optional K-fold cross-fitting of the propensity
 (recommended for the flexible learners), and its seed.}
 
@@ -51,8 +71,10 @@ For a non-probability sample (opt-in panel, volunteer or river sample) with no
 design weights, \code{step_pseudoweight()} estimates each unit's \emph{participation
 propensity} \eqn{\hat p} against a probability \code{reference_sample()} and assigns
 the pseudo-weight \eqn{(1 - \hat{p})/\hat{p}}{(1 - p)/p} (the participation odds;
-Elliott and Valliant 2017), which inflates each unit to the population so the
-weights sum to the reference's estimated population size. It stacks the non-probability sample and the
+the adjusted logistic propensity of Wang, Valliant and Li 2021, after Elliott and
+Valliant 2017), which inflates each unit to the population. Their sum \emph{estimates}
+the reference's estimated population size -- it is unbiased for it, not equal to
+it, and varies from sample to sample like any other estimator. It stacks the non-probability sample and the
 reference internally (the participation indicator and the two samples' weights
 are built for you), fits the propensity, and returns the pseudo-weight on the
 non-probability units only; the reference is used to train the model and then
@@ -82,6 +104,10 @@ c(naive = mean(vol$income),
   truth = mean(population$income))
 }
 \references{
+Wang, L., Valliant, R. and Li, Y. (2021). Adjusted logistic propensity weighting
+methods for population inference using nonprobability volunteer-based epidemiologic
+cohorts. Statistics in Medicine 40(24), 5237-5250. \doi{10.1002/sim.9122}
+
 Elliott, M. R. and Valliant, R. (2017). Inference for non-probability samples.
 Statistical Science 32(2), 249-264.
 }

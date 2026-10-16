@@ -37,7 +37,7 @@ test_that("composite wave reproduces BOTH the demographic totals X and the compo
     prep()
 
   fit2 <- weighting_spec(d2, base_weights = pw) |>
-    step_cre(previous = fit1, status = lf_status,
+    step_cre(previous = fit1, rescale_previous = TRUE, status = lf_status,
              composite = list(NULL, "sex"),
              id_unit = c("household_id", "person_no"),
              formula = f, totals = cre_totals(d2, f)) |>
@@ -59,7 +59,7 @@ test_that("alpha = 0 (MR1/level) and alpha = 1 (MR2/change) both run and satisfy
     step_cre(previous = NULL, status = lf_status, formula = f, totals = cre_totals(d1, f)) |>
     prep()
   mk <- function(a) weighting_spec(d2, base_weights = pw) |>
-    step_cre(previous = fit1, status = lf_status, composite = list(NULL),
+    step_cre(previous = fit1, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), formula = f, totals = cre_totals(d2, f),
              alpha = a) |>
     prep()
@@ -78,7 +78,7 @@ test_that("integrated method: equal_within_cluster gives one weight per househol
              cluster = "household_id", equal_within_cluster = TRUE) |>
     prep()
   fit2 <- weighting_spec(d2, base_weights = pw) |>
-    step_cre(previous = fit1, status = lf_status, composite = list(NULL, "sex"),
+    step_cre(previous = fit1, rescale_previous = TRUE, status = lf_status, composite = list(NULL, "sex"),
              id_unit = c("household_id", "person_no"), formula = f, totals = cre_totals(d2, f),
              cluster = "household_id", equal_within_cluster = TRUE) |>
     prep()
@@ -95,11 +95,11 @@ test_that("recursion over three waves runs and stays finite", {
     step_cre(previous = NULL, status = lf_status, formula = f, totals = cre_totals(d1, f)) |>
     prep()
   fit2 <- weighting_spec(d2, base_weights = pw) |>
-    step_cre(previous = fit1, status = lf_status, composite = list(NULL),
+    step_cre(previous = fit1, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), formula = f, totals = cre_totals(d2, f)) |>
     prep()
   fit3 <- weighting_spec(d3, base_weights = pw) |>
-    step_cre(previous = fit2, status = lf_status, composite = list(NULL),
+    step_cre(previous = fit2, rescale_previous = TRUE, status = lf_status, composite = list(NULL),
              id_unit = c("household_id", "person_no"), formula = f, totals = cre_totals(d3, f)) |>
     prep()
   expect_true(all(is.finite(fit3$final_weight)))
@@ -112,7 +112,7 @@ test_that("rotation_group adds equal-representation constraints (each group weig
   tt <- cre_totals(d, f)                      # (Intercept) target = N
   fit <- weighting_spec(d, base_weights = pw) |>
     step_cre(previous = NULL, status = lf_status, formula = f, totals = tt,
-             rotation_group = "rotation_group") |>
+             rotation_group = "rotation_group", n_groups = 6) |>
     prep()
   w   <- fit$final_weight
   by_g <- tapply(w, d$rotation_group, sum)
@@ -133,4 +133,58 @@ test_that("step_cre input validation", {
       step_cre(previous = NULL, status = lf_status, formula = ~ sex,
                totals = cre_totals(d, ~ sex), alpha = 2),
     "alpha")
+})
+
+# CRE-07. G is a property of the design. Read off the active sample it moves with who
+# answered, and the equal-representation target N/G moves with it -- silently, because
+# N/G_present is the only reading that is feasible with the intercept pinned at N.
+
+test_that("step_cre() refuses to infer G from the wave when a rotation group is absent", {
+  d  <- cre_wave(1)
+  f  <- ~ sex
+  tt <- cre_totals(d, f)                       # population totals: they do NOT shrink
+  d5 <- subset(d, rotation_group != "g6")      # one group answered nobody
+
+  # declared through n_groups
+  expect_error(
+    weighting_spec(d5, base_weights = pw) |>
+      step_cre(previous = NULL, status = lf_status, formula = f, totals = tt,
+               rotation_group = "rotation_group", n_groups = 6) |> prep(),
+    "design has 6 group\\(s\\) but only 5")
+
+  # declared through the factor's levels, which survive a level going empty
+  df <- d5; df$rotation_group <- factor(df$rotation_group, levels = paste0("g", 1:6))
+  expect_error(
+    weighting_spec(df, base_weights = pw) |>
+      step_cre(previous = NULL, status = lf_status, formula = f, totals = tt,
+               rotation_group = "rotation_group") |> prep(),
+    "missing: g6")
+
+  # and it is not a false alarm: with all six present it calibrates each to exactly N/6
+  fit <- weighting_spec(d, base_weights = pw) |>
+    step_cre(previous = NULL, status = lf_status, formula = f, totals = tt,
+             rotation_group = "rotation_group", n_groups = 6) |> prep()
+  expect_equal(as.numeric(tapply(fit$final_weight, d$rotation_group, sum)),
+               rep(unname(tt[["(Intercept)"]]) / 6, 6), tolerance = 1e-6)
+})
+
+test_that("a character rotation column with no n_groups says G was read off the wave", {
+  d  <- cre_wave(1); f <- ~ sex
+  expect_warning(
+    weighting_spec(d, base_weights = pw) |>
+      step_cre(previous = NULL, status = lf_status, formula = f, totals = cre_totals(d, f),
+               rotation_group = "rotation_group") |> prep(),
+    "not a factor and `n_groups` was not given")
+})
+
+test_that("n_groups is validated and only means something with rotation_group", {
+  d <- cre_wave(1)
+  sp <- weighting_spec(d, base_weights = pw)
+  expect_error(step_cre(sp, previous = NULL, status = lf_status, formula = ~ sex,
+                        totals = cre_totals(d, ~ sex), n_groups = 6),
+               "only means anything with `rotation_group`")
+  expect_error(step_cre(sp, previous = NULL, status = lf_status, formula = ~ sex,
+                        totals = cre_totals(d, ~ sex),
+                        rotation_group = "rotation_group", n_groups = 1),
+               "whole number >= 2")
 })

@@ -78,6 +78,7 @@ JSSAM
 Kalton
 Kish
 Kish's
+Kott
 Kovacevic
 Kreuter
 LFS
@@ -164,6 +165,7 @@ analysed
 analysing
 anticonservative
 análisis
+attrited
 auditable
 behaviour
 benchmarking
@@ -177,6 +179,7 @@ centres
 collinear
 colouring
 colours
+comonotone
 compuesta
 computable
 condicion
@@ -199,6 +202,7 @@ el
 eligibles
 emdi
 encuestas
+epidemiologic
 erroring
 estadístico
 estimand
@@ -216,6 +220,7 @@ haven
 hbsae
 hogares
 humanises
+ignorability
 ignorable
 insertable
 inspectable
@@ -249,6 +254,7 @@ nd
 neutralises
 noncontact
 nonignorable
+nonprobability
 nonrespondent
 nonrespondents
 nonresponding
@@ -307,6 +313,7 @@ subsample
 subsampled
 subsampling
 subseteq
+subuniverse
 subweight
 subweights
 summarise
@@ -321,11 +328,13 @@ trimcal
 tukey
 unbiasedness
 uncentred
+unclustered
 uncoded
 undercover
 undercoverage
 undercovering
 undercovers
+unlinked
 unprepped
 unstratified
 untrusted
@@ -339,4 +348,6 @@ wts
 xbar
 xgboost
 xr
+y1
+yK
 ybar

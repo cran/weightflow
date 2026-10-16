@@ -188,6 +188,26 @@
   diag(s / costs, nrow = length(cn))
 }
 
+# Column scale used everywhere a calibration system is built or measured: the RMS of
+# each column, so a column of zeros (an empty dummy) keeps scale 1 instead of dividing
+# by zero. Shared by the solver and by the conditioning diagnostic, so the number the
+# user is shown is the number the solver worked with.
+.wf_col_scale <- function(Z) {
+  apply(Z, 2L, function(cc) { v <- sqrt(mean(cc^2)); if (!is.finite(v) || v == 0) 1 else v })
+}
+
+# Condition number of the system actually solved: A = X' diag(d) X on the SCALED
+# columns. The diagnostic used to report kappa(crossprod(X)) -- unweighted, unscaled
+# and squared -- which measures the disparity of units rather than collinearity, so
+# it fired on every calibration carrying a continuous auxiliary in natural units and
+# advised dropping an auxiliary that was not redundant.
+.wf_calib_cond <- function(X, d) {
+  tryCatch({
+    Xs <- sweep(X, 2L, .wf_col_scale(X), "/")
+    kappa(t(Xs) %*% (d * Xs), exact = TRUE)
+  }, error = function(e) NA_real_)
+}
+
 .solve_calib <- function(A, rhs) {
   out <- tryCatch(solve(A, rhs), error = function(e) NULL)
   if (!is.null(out)) return(out)
@@ -266,8 +286,17 @@
   # last allowed iteration (it == maxit) is never re-checked. Re-test once here so
   # a run that actually reached `tol` on its final step is reported as converged.
   if (!ok && cur < tol) ok <- TRUE
+  # Name the distance actually in use and only blame `bounds` when there are any:
+  # with calfun = "raking" and no bounds the old text sent the user to an argument
+  # they had not supplied. Report the size of the miss, not just that there was one.
   if (!ok)
-    warning("Bounded calibration did not fully converge (bounds may be infeasible).",
+    warning(sprintf(paste0("The %s calibration did not fully converge in %d iteration(s): largest ",
+                           "relative deviation from the targets = %.3e. The weights returned do ",
+                           "NOT satisfy the constraints.%s"),
+                    calfun, maxit, cur,
+                    if (is.null(bounds) && calfun != "logit")
+                      " Raise `maxit`, loosen `tol`, or check the auxiliaries for collinearity."
+                    else " Widen `bounds`, raise `maxit`, or check that the range is feasible."),
             call. = FALSE)
   out <- Ffun(as.numeric(Xs %*% lambda))
   attr(out, "converged") <- ok
@@ -287,10 +316,26 @@
   use_ds <- calfun != "linear" || !is.null(bounds)
   if (!use_ds) {
     cn <- colnames(Z)
-    A  <- t(Z) %*% (v * Z)
-    if (!is.null(penalty)) A <- A + .ridge_diag(penalty, cn, A)
-    lambda <- .solve_calib(A, Tvec - colSums(v * Z))
-    return(list(g = as.numeric(1 + Z %*% lambda), converged = TRUE))
+    # Column scaling, as .calib_ds() already does for the iterative path. The closed
+    # form is the DEFAULT route (linear, no bounds) and was the only one solving the
+    # raw system: any auxiliary in natural units (income, sales, area) drives the
+    # condition number to 1e12-1e14 purely through the disparity of units, with no
+    # collinearity at all. solve() only errors past ~4e15, so it returned an answer
+    # with no warning. Scaling is an exact reparametrisation (lambda_s = s * lambda),
+    # so the weights are unchanged up to floating point.
+    s  <- .wf_col_scale(Z)
+    Zs <- sweep(Z, 2L, s, "/")
+    As <- t(Zs) %*% (v * Zs)
+    if (!is.null(penalty)) {
+      # The ridge diagonal is defined on the UNSCALED system, so map it into the
+      # scaled coordinates (R_s = D^-1 R D^-1) rather than recomputing it here:
+      # recomputing would silently make `penalty` per-column, which is a separate
+      # behaviour change and not this fix.
+      R  <- .ridge_diag(penalty, cn, t(Z) %*% (v * Z))
+      As <- As + diag(diag(R) / s^2, nrow = length(cn))
+    }
+    lambda <- .solve_calib(As, Tvec / s - colSums(v * Zs))
+    return(list(g = as.numeric(1 + Zs %*% lambda), converged = TRUE))
   }
   g <- .calib_ds(Z, v, Tvec, calfun, bounds, maxit, tol)
   list(g = as.numeric(g), converged = isTRUE(attr(g, "converged")))

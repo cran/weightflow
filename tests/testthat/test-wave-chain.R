@@ -123,7 +123,7 @@ test_that("a CRE chain injects Zhat* per replicate and needs a fat carry", {
   expect_equal(s1$n_cre_skipped, 0L)                    # a seed wave must not warn
 
   sp2 <- weighting_spec(w[[2]], base_weights = pw) |>
-    step_cre(previous = prep(sp1), status = lf_status, composite = list(NULL, "sex"),
+    step_cre(previous = prep(sp1), rescale_previous = TRUE, status = lf_status, composite = list(NULL, "sex"),
              id_unit = c("household_id", "person_no"), formula = ~ sex, totals = Xtot(w[[2]]),
              alpha = 2/3, status_ref = "inact")
   s2 <- wave_step(sp2, previous = wave_carry(s1), estimands = E, replicates = 40,

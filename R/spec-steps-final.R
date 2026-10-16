@@ -17,9 +17,22 @@
 #' `replicates`: each bootstrap replicate then re-estimates the totals from the
 #' paired reference replicate (Opsomer and Erciulescu 2021), so the extra
 #' variance from estimating the totals is captured. Without `replicates` the
-#' totals are treated as fixed (a reasonable approximation when the reference is
-#' much larger than the sample, and the same assumption made when calibrating to
-#' another survey's published totals).
+#' totals are treated as fixed -- the same assumption made when calibrating to
+#' another survey's published totals.
+#'
+#' How much that assumption costs depends on what the reference is used for, and
+#' the two uses are not equivalent. In [step_model_calibration()] the reference
+#' supplies *totals*, a smooth functional of it. In [step_pseudoweight()] every
+#' reference unit is a row of the pooled participation fit, so the fitted
+#' propensities -- and therefore every pseudo-weight -- depend on the reference
+#' unit by unit. Treating it as fixed there understates the variance even when
+#' the reference is several times the size of the sample, and the recipe cannot
+#' repair this on its own: building the reference's replicates needs its strata,
+#' PSUs and finite-population correction (and its control totals, if it was
+#' calibrated), which only the reference's own producer has. So pass them, from
+#' the survey's published replicate file or built with [bootstrap_weights()] on
+#' the reference's design; without them [bootstrap_weights()] and
+#' [jackknife_weights()] say which assumption they fell back on.
 #'
 #' @param data a `data.frame` of reference-survey microdata, with the columns
 #'   used in `x_formula` and the model predictors.
@@ -52,7 +65,22 @@ reference_sample <- function(data, weights, replicates = NULL) {
   if (anyNA(w) || any(!is.finite(w)) || any(w <= 0))
     stop("Reference-sample weights must be finite and strictly positive ",
          "(no NA, zero or negative weights).", call. = FALSE)
+  # REF-01. The weights used to live only in an attribute. `[.data.frame` carries a
+  # classed frame's attributes through unchanged, so reordering the rows -- arrange(),
+  # order(), a merge, anything -- left the weights in the OLD order silently paired with
+  # the new rows, and subsetting left more weights than rows with nothing checking it.
+  # Reordering a reference to add the domain column `by =` needs is an ordinary thing to
+  # do, so this was a wrong number with no symptom. Columns travel with their rows under
+  # every one of those operations, so that is where they live now. The attributes are
+  # still written, and still read as a fallback, so an object built by an older version
+  # or restored from a saved recipe keeps working -- but on that path the length is
+  # checked, because there is no way to tell a stale order from a fresh one.
+  if (any(c(".wf_ref_w", ".wf_ref_rep") %in% names(data)))
+    stop("The reference `data` already has a column named `.wf_ref_w` or `.wf_ref_rep`; ",
+         "those names are reserved for the reference weights. Rename the column.",
+         call. = FALSE)
   attr(data, "wf_ref_weights") <- as.numeric(w)
+  data[[".wf_ref_w"]] <- as.numeric(w)
   if (!is.null(replicates)) {
     R <- as.matrix(replicates)
     if (!is.numeric(R) || nrow(R) != nrow(data) || ncol(R) < 2L)
@@ -62,12 +90,46 @@ reference_sample <- function(data, weights, replicates = NULL) {
       stop("Reference replicate weights must be finite and non-negative (no NA).", call. = FALSE)
     dimnames(R) <- NULL
     attr(data, "wf_ref_replicates") <- R
+    data[[".wf_ref_rep"]] <- R          # a matrix column: one row per unit, travels with it
   }
   class(data) <- unique(c("wf_reference_sample", class(data)))
   data
 }
 
-#' Model-assisted calibration (Wu and Sitter 2001)
+# The reference's design weights and replicate weights, read from the columns that
+# travel with the rows; an object from before REF-01 (or one whose columns were dropped)
+# falls back to the attributes, and there the length is verified, because a stale
+# attribute is indistinguishable from a fresh one except by its length.
+.wf_ref_weights <- function(x) {
+  if (!is.null(x[[".wf_ref_w"]])) return(as.numeric(x[[".wf_ref_w"]]))
+  w <- attr(x, "wf_ref_weights")
+  if (is.null(w)) return(NULL)
+  if (length(w) != nrow(x))
+    stop(sprintf(paste0("The reference sample carries %d weights for %d rows. Its rows were ",
+                        "subset or reordered after reference_sample() wrapped them, and the ",
+                        "weights did not follow. Build reference_sample() AFTER any ",
+                        "manipulation of the reference data."),
+                 length(w), nrow(x)), call. = FALSE)
+  as.numeric(w)
+}
+
+.wf_ref_reps <- function(x) {
+  r <- x[[".wf_ref_rep"]]
+  if (!is.null(r)) return(as.matrix(r))
+  r <- attr(x, "wf_ref_replicates")
+  if (is.null(r)) return(NULL)
+  if (nrow(r) != nrow(x))
+    stop(sprintf(paste0("The reference sample carries %d rows of replicate weights for %d ",
+                        "rows of data. Build reference_sample() AFTER any manipulation of ",
+                        "the reference data."), nrow(r), nrow(x)), call. = FALSE)
+  r
+}
+
+# Columns the reference carries for its own bookkeeping, hidden from anything that
+# enumerates the user's variables.
+.wf_ref_cols <- c(".wf_ref_w", ".wf_ref_rep")
+
+#' Model calibration (Wu and Sitter 2001)
 #'
 #' Fits a working model for each study variable, predicts it over the whole
 #' population, and calibrates the weights so that the sample total of every
@@ -113,6 +175,25 @@ reference_sample <- function(data, weights, replicates = NULL) {
 #'   for the model predictions.
 #' @param count name of the counts column in the tidy `x_totals` data frames.
 #'   Only used when `x_totals` is given in the tidy (data-frame) format.
+#' @param by NULL (default), or a single column name: **partition** the sample by that
+#'   domain and calibrate each domain on its own units, exactly as `by` does in
+#'   [step_calibrate()]. For model calibration that carries two consequences at once,
+#'   which is usually the reason for wanting it: every working model in `models` is
+#'   fitted on the units of its own domain and never sees the other domains, and the
+#'   `x_formula` totals are reproduced exactly **within** each domain rather than only
+#'   nationally. `population` must carry the same domain column, and `x_totals`, if
+#'   given, must be in the per-domain (tidy) form -- a national named vector would be
+#'   applied to every domain and the population counted once per domain.
+#'
+#'   The rank ceiling then binds per domain, and harder: domain \eqn{g} must carry its
+#'   own \eqn{q_A + K} constraints on its \eqn{n_g} units, and with `crossfit` each of
+#'   its folds must leave enough rows to fit the model coefficients. A domain too small
+#'   for that is reported by name before anything is solved, because the symptom of a
+#'   singular per-domain system is wild weights rather than an error. With linear
+#'   working models, fitting by domain is the same mechanism as cross-fitting -- the
+#'   prediction columns leave the shared span -- so the ceiling moves from
+#'   \eqn{K \le q - q_A} to \eqn{K \le Gq - q_A} with \eqn{G} domains, and the two
+#'   compose.
 #' @param cluster name of the cluster id column (e.g. "household"), for equal
 #'   weights within the cluster.
 #' @param equal_within_cluster logical. If TRUE, integrative calibration: a
@@ -199,7 +280,7 @@ reference_sample <- function(data, weights, replicates = NULL) {
 #'   step is recorded only; it is evaluated when `prep()` is called.
 #' @family weighting steps
 step_model_calibration <- function(spec, x_formula, models, population,
-                                   x_totals = NULL, count = "Freq",
+                                   x_totals = NULL, count = "Freq", by = NULL,
                                    cluster = NULL, equal_within_cluster = FALSE,
                                    calfun = c("linear", "logit", "raking"),
                                    bounds = NULL, maxit = 100L, tol = 1e-7,
@@ -209,6 +290,9 @@ step_model_calibration <- function(spec, x_formula, models, population,
   if (missing(x_formula) || missing(models) || missing(population))
     stop("`x_formula`, `models` and `population` are required.")
   if (!inherits(x_formula, "formula")) stop("`x_formula` must be a formula ~ x.")
+  if (!is.null(by) && (!is.character(by) || length(by) != 1L || is.na(by)))
+    stop("`by` must be NULL or a single column name naming the domain to partition on.",
+         call. = FALSE)
   calfun <- match.arg(calfun)
   # `bounds` on the g-factor, with the same meaning and validation as
   # step_calibrate(method = "linear"): keeps the final weight in [L, U] * base.
@@ -265,6 +349,7 @@ step_model_calibration <- function(spec, x_formula, models, population,
       population = population,
       x_totals   = x_totals,
       count      = count,
+      by         = by,
       cluster    = cluster,
       equal_within_cluster = equal_within_cluster,
       calfun     = calfun,

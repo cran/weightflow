@@ -86,6 +86,19 @@ bootstrap_weights <- function(object, replicates = 200L, strata = NULL,
   lonely_psu <- match.arg(lonely_psu)
   replicates <- .wf_count(replicates, "replicates", min = 2L)
   if (!is.null(m)) m <- .wf_count(m, "m", min = 1L)
+  # N-02. See .wf_pseudo_ref_unreplicated(): without the reference's replicate weights
+  # these columns hold the reference fixed, which is an assumption about the reference,
+  # not a property of the bootstrap. Name it before the numbers are produced.
+  if (.wf_pseudo_ref_unreplicated(object))
+    warning(paste0(
+      "bootstrap_weights(): step_pseudoweight() uses a reference_sample() with no ",
+      "replicate weights, so these replicates treat the reference as the population: ",
+      "its totals as known, and its units as fixed data in the participation model. ",
+      "That is correct for a frame or a census; for a reference survey the standard ",
+      "errors are underestimated. Pass the reference's replicate weights -- ",
+      "reference_sample(ref, weights = w, replicates = R) -- from its own replicate ",
+      "file, or build them with bootstrap_weights() on the reference's design."),
+      call. = FALSE)
   # Snapshot the caller's RNG so the per-replicate seeding below does not leak
   # into their stream (restored on exit, once the replicate seeds are drawn).
   .rng_entry <- if (exists(".Random.seed", envir = .GlobalEnv))
@@ -384,6 +397,13 @@ print.weightflow_boot <- function(x, ...) {
   cat(sprintf("  psu        : %s\n", if (is.null(x$psu)) "(unit-level)" else x$psu))
   if (!is.null(x$df)) cat(sprintf("  df         : %d%s\n", x$df,
       if (!is.null(x$fpc) && !(is.numeric(x$fpc) && all(x$fpc == 0))) "  (fpc applied)" else ""))
+  # Monte Carlo error of the SE itself. For an approximately normal theta*, the
+  # relative sd of V-hat is sqrt(2/R), so the SE carries half of that. At the
+  # default R = 200 that is 5%: two runs of the same analysis with different seeds
+  # give standard errors ~9% apart (+/- 2 sd), which reads as a real change in
+  # precision when it is only Monte Carlo noise. Raise `replicates` to shrink it.
+  cat(sprintf("  MCSE(SE)   : ~%.1f%% of any SE from this object (Monte Carlo noise at R = %d)\n",
+              100 / sqrt(2 * x$R), x$R))
   invisible(x)
 }
 
@@ -447,8 +467,16 @@ bootstrap_estimate <- function(boot, statistic, level = 0.95,
   mat <- is.matrix(thetas)
   good   <- if (mat) apply(is.finite(thetas), 2L, all) else is.finite(thetas)
   nvalid <- sum(good)
+  # Say what dropping them does, as the panel path already does: the variance is
+  # computed over the survivors, and a replicate usually fails because the recipe
+  # broke on an extreme resample (an emptied calibration cell), which is exactly
+  # the tail that carries variance. The SE is therefore an underestimate.
   if (nvalid < length(good))
-    warning(length(good) - nvalid, " non-finite replicate(s) dropped.")
+    warning(sprintf(paste0("%d of %d non-finite replicate(s) dropped from the bootstrap; ",
+                           "the variance is computed over the remaining %d. Replicates usually ",
+                           "fail on the most extreme resamples, so the SE is biased low. Check ",
+                           "the recipe for steps that cannot survive an empty cell."),
+                    length(good) - nvalid, length(good), nvalid), call. = FALSE)
   if (mat) { dev <- thetas[, good, drop = FALSE] - theta_hat; se <- sqrt(rowMeans(dev^2)) }
   else       se <- sqrt(mean((thetas[good] - theta_hat)^2))
   if (ci_type == "percentile") {
@@ -468,14 +496,22 @@ bootstrap_estimate <- function(boot, statistic, level = 0.95,
     } else stats::qnorm(1 - a)
     lo <- theta_hat - crit * se; hi <- theta_hat + crit * se
   }
-  data.frame(estimate = theta_hat, se = se, ci_lower = lo, ci_upper = hi,
-             row.names = if (mat) rownames(thetas) else NULL)
+  out <- data.frame(estimate = theta_hat, se = se, ci_lower = lo, ci_upper = hi,
+                    row.names = if (mat) rownames(thetas) else NULL)
+  # Monte Carlo error of the reported SE, from the R valid replicates: sd(V)/V is
+  # sqrt(2/R) for an approximately normal theta*, and the SE carries half of it.
+  # An attribute rather than a column, so the shape of the result is unchanged.
+  attr(out, "mcse") <- if (nvalid > 1L) se / sqrt(2 * nvalid) else NA_real_
+  attr(out, "replicates") <- nvalid
+  out
 }
 
 #' @rdname bootstrap_estimate
 #' @param variable name of the variable to estimate.
 #' @export
-boot_total <- function(boot, variable) {
+boot_total <- function(boot, variable, level = 0.95,
+                       ci_type = c("normal", "t", "percentile"), df = NULL) {
+  ci_type  <- match.arg(ci_type)
   variable <- .wf_var(variable, boot)
   # The two-phase replicate factor is a Hansen-Hurwitz (uncentred) per-PSU multiplier: it
   # self-centres for a mean/ratio but NOT for a total, where it is conservative and can
@@ -486,17 +522,29 @@ boot_total <- function(boot, variable) {
             "overestimate the variance. It self-centres for a mean/ratio, so boot_mean() is ",
             "unaffected; treat this total's SE as an upper bound.", call. = FALSE)
   bootstrap_estimate(boot, function(w, d)
-    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE))
+    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE),
+    level = level, ci_type = ci_type, df = df %||% boot$df)
 }
 
 #' @rdname bootstrap_estimate
 #' @export
-boot_mean <- function(boot, variable) {
+boot_mean <- function(boot, variable, level = 0.95,
+                      ci_type = c("normal", "t", "percentile"), df = NULL) {
+  ci_type  <- match.arg(ci_type)
   variable <- .wf_var(variable, boot)
+  # The two-phase phase-1 multiplier is Hansen-Hurwitz (uncentred). It self-centres
+  # for a ratio only to first order: the Gamma(1/d, d) coupling is skewed, the
+  # second-order term of the ratio does not cancel, and the SE comes out mildly
+  # conservative (measured +5-8% in simulation). Say so, as boot_total() does for
+  # the much larger total effect, instead of letting the vignette claim it is exact.
+  if (isTRUE(boot$two_phase))
+    message("boot_mean(): with a two-phase design the phase-1 multiplier is uncentred. It ",
+            "self-centres for a ratio only to first order, so this SE is mildly conservative ",
+            "(measured +5-8% in simulation); read it as a slight upper bound.")
   bootstrap_estimate(boot, function(w, d) {
     x <- d[[variable]]; ok <- !is.na(x) & .wf_active(w)   # keep active negatives, as totals do
     sum(w[ok] * x[ok]) / sum(w[ok])
-  })
+  }, level = level, ci_type = ci_type, df = df %||% boot$df)
 }
 
 # ==========================================================================
@@ -519,13 +567,42 @@ boot_mean <- function(boot, variable) {
 #' the unstratified jackknife (JK1), and with `psu = NULL` each unit is its own
 #' PSU (delete-one-unit jackknife).
 #'
+#' With a direct (element) sample the delete-one-unit jackknife is the right
+#' estimator, but it needs one replicate per unit: the whole recipe is re-prepped
+#' `n` times and the replicate matrix is `n x n`, which is 80 GB at n = 100,000.
+#' `groups` gives the standard device for that case, the **delete-a-group**
+#' jackknife (Kott 2001; Rust and Rao 1996): the sample is partitioned at random
+#' into `G` groups within each stratum and one whole group is deleted at a time,
+#' so there are `G` replicates instead of `n`. It is the same estimator the engine
+#' already computes -- the group simply plays the part of the PSU -- with
+#' \eqn{(G-1)/G} in place of \eqn{(n_h-1)/n_h}, and `df = G - strata`, which is the
+#' honest precision of the variance. `G` between 30 and 100 is the usual range;
+#' it is not defaulted, because the choice is the analyst's and the delete-one and
+#' delete-a-group variances are not the same number (the second is noisier).
+#'
 #' @param object a weighting_spec (inert recipe) or a prepped weighting_spec.
 #'   Pass the recipe *before* `prep()`: the jackknife preps it once per replicate.
 #' @param strata name of the stratum column, or NULL for a single stratum.
 #' @param psu name of the PSU column, or NULL to delete one unit at a time.
+#' @param groups NULL (default) or the number of random groups `G` for a
+#'   delete-a-group jackknife on a direct sample. Units are assigned to groups at
+#'   random within each stratum and one group is deleted per replicate, giving `G`
+#'   replicates instead of one per unit. Requires `psu = NULL`: the group replaces
+#'   the PSU, it does not nest inside one.
+#' @param seed optional integer seed for the random group assignment, so the
+#'   replicates are reproducible. The caller's RNG state is restored on exit.
 #' @param lonely_psu how to treat strata with a single PSU: "certainty"
 #'   (default) skips them (no variance) and warns; "collapse" merges them into a
 #'   pseudo-stratum so they yield delete-a-PSU replicates.
+#' @param max_replicates the largest number of replicates this call will build
+#'   (default 5000); above it the call stops rather than starting the run. Unlike
+#'   [bootstrap_weights()], where you set `replicates`, here the count falls out of
+#'   the design: one replicate per PSU, and with `psu = NULL` one per **unit**. Each
+#'   replicate re-runs the whole recipe and holds a column of weights, so a direct
+#'   sample of 100,000 units means 100,000 re-preps and an 80 GB matrix. That is the
+#'   correct delete-one jackknife, which is why the limit refuses it up front instead
+#'   of letting the session die: for a sample that size the usual device is the
+#'   delete-a-group jackknife, `groups = 50`. Set `Inf` to build them all.
 #' @param cores number of parallel workers for the replicates (default 1 =
 #'   serial). With `cores > 1` the replicate re-preps run in parallel via
 #'   `parallel::mclapply` (forking; serial on Windows). For a deterministic
@@ -542,9 +619,9 @@ boot_mean <- function(boot, variable) {
 #' jack_total(jk, "employed")
 #' @export
 #' @family variance estimation
-jackknife_weights <- function(object, strata = NULL, psu = NULL,
-                              lonely_psu = c("certainty", "collapse"),
-                              cores = 1L, progress = TRUE) {
+jackknife_weights <- function(object, strata = NULL, psu = NULL, groups = NULL,
+                              seed = NULL, lonely_psu = c("certainty", "collapse"),
+                              max_replicates = 5000L, cores = 1L, progress = TRUE) {
   if (!inherits(object, "weighting_spec"))
     stop("`object` must be a weighting_spec or a prepped weighting_spec.")
   # Two-phase designs are not supported by the jackknife: a delete-a-PSU jackknife
@@ -555,6 +632,18 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
          "a step_subsample()); it would capture only the first-phase variance and ",
          "undercover. Use bootstrap_weights() for the two-phase variance.",
          call. = FALSE)
+  # N-02, the jackknife's own version of it: there is no reference replicate to pair a
+  # delete-one replicate with, so this component is absent whether or not the reference
+  # carries `replicates`. Hence the different wording from bootstrap_weights(): nothing
+  # the caller passes here will supply it.
+  if (any(.wf_pseudo_steps(object)))
+    warning(paste0(
+      "jackknife_weights(): this recipe has a step_pseudoweight(), and the delete-one ",
+      "jackknife treats the reference as the population even when `replicates` is ",
+      "supplied -- it never re-estimates it, so that component of the variance is ",
+      "missing rather than approximated. If the reference is a survey, the standard ",
+      "errors are underestimated; use bootstrap_weights(), which pairs each replicate ",
+      "with a reference replicate."), call. = FALSE)
   lonely_psu <- match.arg(lonely_psu)
   t0 <- Sys.time()
   data <- object$data
@@ -575,9 +664,37 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
     if (!strata %in% names(data)) stop(sprintf("Strata column '%s' not found.", strata))
     as.character(data[[strata]])
   }
-  cl <- if (is.null(psu)) as.character(seq_len(n)) else {
-    if (!psu %in% names(data)) stop(sprintf("PSU column '%s' not found.", psu))
-    as.character(data[[psu]])
+  # Delete-a-group jackknife for a direct sample (Kott 2001; Rust and Rao 1996). The
+  # group takes the PSU's place, so the engine below -- delete one, inflate the rest of
+  # the stratum by nh/(nh-1) -- already IS the delete-a-group estimator with nh = G.
+  # Groups are drawn WITHIN each stratum and balanced, which is the standard form.
+  if (!is.null(groups)) {
+    if (!is.null(psu))
+      stop("`groups` and `psu` are mutually exclusive: the random group replaces the PSU ",
+           "(it does not nest inside one). Drop `psu` for a delete-a-group jackknife on a ",
+           "direct sample, or drop `groups` to delete one PSU at a time.", call. = FALSE)
+    groups <- .wf_count(groups, "groups", min = 2L)
+    if (!is.null(seed)) {
+      .rng0 <- if (exists(".Random.seed", envir = .GlobalEnv))
+        get(".Random.seed", envir = .GlobalEnv) else NULL
+      set.seed(seed)
+      on.exit(if (!is.null(.rng0)) assign(".Random.seed", .rng0, envir = .GlobalEnv),
+              add = TRUE)
+    }
+    gid <- character(n)
+    for (h in unique(st)) {
+      ih <- which(st == h)
+      # rep_len + sample: balanced sizes, and a stratum smaller than G simply uses as
+      # many groups as it has units (it then behaves like the delete-one jackknife
+      # there, which is the correct limit).
+      gid[ih] <- as.character(sample(rep_len(seq_len(groups), length(ih))))
+    }
+    cl <- gid
+  } else {
+    cl <- if (is.null(psu)) as.character(seq_len(n)) else {
+      if (!psu %in% names(data)) stop(sprintf("PSU column '%s' not found.", psu))
+      as.character(data[[psu]])
+    }
   }
   .assert_design_complete(data, strata, psu)
   if (any(vapply(object$steps, inherits, logical(1), "step_cre")))
@@ -603,6 +720,24 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
   R <- length(rep_psu)
   if (R == 0L)
     stop("No stratum has >= 2 PSUs; the jackknife has no replicates.")
+  # VAR-19. This is the one replicate design the caller does not size: bootstrap_weights()
+  # takes `replicates`, while here the count falls out of the data -- one replicate per PSU,
+  # and with `psu = NULL` one per UNIT. Each replicate re-preps the whole recipe and keeps a
+  # column of n weights, so a direct sample of 100,000 means 100,000 re-preps and an 80 GB
+  # matrix. That is the correct delete-one estimator, not a defect, which is exactly why it
+  # has to be refused out loud instead of discovered when the session dies: the delete-a-group
+  # jackknife (Kott 2001; Rust and Rao 1996) is the same variance family at G replicates.
+  if (is.finite(max_replicates) && R > max_replicates)
+    stop(sprintf(paste0("jackknife_weights(): this design gives %s replicates%s, which means %s ",
+      "re-preps of the recipe and a %s x %s matrix of weights (about %s). Pass ",
+      "groups = 50 for the delete-a-group jackknife, which estimates the same variance with ",
+      "50 replicates;%s or raise max_replicates if you mean to build them all."),
+      format(R, big.mark = ","),
+      if (is.null(psu) && is.null(groups)) " (one per unit, because `psu` is NULL)" else "",
+      format(R, big.mark = ","), format(n, big.mark = ","), format(R, big.mark = ","),
+      local({ b <- 8 * as.numeric(n) * R
+              if (b >= 1e9) sprintf("%.1f GB", b / 1e9) else sprintf("%.0f MB", b / 1e6) }),
+      if (is.null(psu)) " pass `psu` if the design is clustered;" else ""), call. = FALSE)
 
   one_rep <- function(r) {
     h <- rep_stratum[r]; nh <- rep_nh[r]
@@ -633,7 +768,7 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
   # Degrees of freedom = (total PSUs) - (strata): one delete-a-PSU replicate per PSU.
   df <- length(rep_stratum) - length(unique(rep_stratum))
   structure(list(replicates = reps, weights = point, data = data,
-                 strata = strata, psu = psu, R = R,
+                 strata = strata, psu = psu, groups = groups, R = R,
                  rep_stratum = rep_stratum, rep_nh = rep_nh, base_weights = bw,
                  method = "jackknife", lonely_psu = lonely_psu, df = df,
                  cores = as.integer(cores),
@@ -654,10 +789,13 @@ jackknife_weights <- function(object, strata = NULL, psu = NULL,
 #' @export
 print.weightflow_jack <- function(x, ...) {
   cat("<weightflow jackknife>\n")
-  cat(sprintf("  replicates : %d (delete-a-PSU)\n", x$R))
+  cat(sprintf("  replicates : %d (%s)\n", x$R,
+              if (!is.null(x$groups)) sprintf("delete-a-group, G = %d", x$groups)
+              else "delete-a-PSU"))
   cat(sprintf("  units      : %d (active: %d)\n", nrow(x$replicates), sum(.wf_active(x$weights))))
   cat(sprintf("  strata     : %s\n", if (is.null(x$strata)) "(none)" else x$strata))
-  cat(sprintf("  psu        : %s\n", if (is.null(x$psu)) "(unit-level)" else x$psu))
+  cat(sprintf("  psu        : %s\n", if (!is.null(x$groups)) "(random groups)"
+              else if (is.null(x$psu)) "(unit-level)" else x$psu))
   if (!is.null(x$df)) cat(sprintf("  df         : %d\n", x$df))
   invisible(x)
 }
@@ -758,28 +896,42 @@ jackknife_estimate <- function(jack, statistic, level = 0.95,
     se <- sqrt(jkn_var(thetas, jack$rep_nh))
   }
   n_bad <- if (is.matrix(thetas)) sum(!apply(is.finite(thetas), 2L, all)) else sum(!is.finite(thetas))
-  if (n_bad > 0L) warning(n_bad, " non-finite replicate(s) dropped.")
-  data.frame(estimate = theta_hat, se = se,
-             ci_lower = theta_hat - z * se, ci_upper = theta_hat + z * se,
-             row.names = if (is.matrix(thetas)) rownames(thetas) else NULL)
+  if (n_bad > 0L)
+    warning(sprintf(paste0("%d non-finite replicate(s) dropped from the delete-one jackknife. ",
+                           "Each stratum's ",
+                           "contribution is rescaled by (n_h - 1)/m_h over its surviving ",
+                           "replicates, so the variance is not biased low by the omission ",
+                           "itself; but a replicate that failed is usually the one that ",
+                           "emptied a calibration cell, so check the recipe."), n_bad),
+            call. = FALSE)
+  out <- data.frame(estimate = theta_hat, se = se,
+                    ci_lower = theta_hat - z * se, ci_upper = theta_hat + z * se,
+                    row.names = if (is.matrix(thetas)) rownames(thetas) else NULL)
+  attr(out, "mcse") <- 0            # the jackknife is deterministic: no Monte Carlo error
+  out
 }
 
 #' @rdname jackknife_estimate
 #' @export
-jack_total <- function(jack, variable) {
+jack_total <- function(jack, variable, level = 0.95,
+                       ci_type = c("normal", "t"), df = NULL) {
+  ci_type  <- match.arg(ci_type)
   variable <- .wf_var(variable, jack)
   jackknife_estimate(jack, function(w, d)
-    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE))
+    if (anyNA(w)) NA_real_ else sum(w * d[[variable]], na.rm = TRUE),
+    level = level, ci_type = ci_type, df = df %||% jack$df)
 }
 
 #' @rdname jackknife_estimate
 #' @export
-jack_mean <- function(jack, variable) {
+jack_mean <- function(jack, variable, level = 0.95,
+                      ci_type = c("normal", "t"), df = NULL) {
+  ci_type  <- match.arg(ci_type)
   variable <- .wf_var(variable, jack)
   jackknife_estimate(jack, function(w, d) {
     x <- d[[variable]]; ok <- !is.na(x) & .wf_active(w)   # keep active negatives, as totals do
     sum(w[ok] * x[ok]) / sum(w[ok])
-  })
+  }, level = level, ci_type = ci_type, df = df %||% jack$df)
 }
 
 #' Decompose a two-phase variance into V = V1 + V2
@@ -889,6 +1041,22 @@ as_svydesign <- function(object, ids, strata = NULL, weight_name = ".weight", ..
          "step_subsample()): a single-phase survey design would omit the phase-2 ",
          "variance component. Use bootstrap_weights() for the two-phase variance, ",
          "or survey::twophase() to build a two-phase design directly.", call. = FALSE)
+  # N-07. A survey.design carries a sampling design, and every variance survey computes
+  # from it -- svymean, svytotal, svyby, svyglm -- comes from that design's randomization.
+  # A volunteer sample has none: handing one over turns it into "simple random sampling
+  # with replacement" by default, which is an assumption about how the units arrived, not
+  # a property of the weights. The point estimates are the pseudo-weighted ones and are
+  # fine; only the standard errors are invented. Say so once, here, because downstream
+  # survey has no way to know.
+  if (inherits(object, "weighting_spec") && isTRUE(object$nonprob))
+    warning(paste0(
+      "as_svydesign(): this recipe is a non-probability sample, and a survey design ",
+      "describes a sampling design it does not have. survey's variance formulas will ",
+      "treat the units as drawn at random (simple random sampling with replacement, ",
+      "unless you pass `ids`/`strata` describing something else), so the point ",
+      "estimates carry the pseudo-weights but the standard errors do not come from ",
+      "any real design. For a variance that re-runs the participation model, use ",
+      "bootstrap_weights() and as_svrepdesign()."), call. = FALSE)
   if (inherits(object, "prepped_weighting_spec")) {
     df <- object$data; df[[weight_name]] <- object$final_weight
   } else if (is.data.frame(object)) {

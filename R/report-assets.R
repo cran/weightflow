@@ -2,9 +2,15 @@
 # (theme toggle, per-table CSV download, print). The stylesheet lives in
 # R/report-css.R.
 
-.metric <- function(label, value)
+# A header tile. `value` is where DATA reaches the page -- a wave label, a domain
+# name, a count -- so it is escaped by default; `label` is always a literal written
+# in this package (a .t() pair, some of which carry entities like &alpha;), so it is
+# passed through. A call site that really does build markup for the value says so
+# with raw = TRUE, and then owns the escaping of anything data-derived inside it.
+# (SEC-01: a value of the `wave` column reached the page unescaped from here.)
+.metric <- function(label, value, raw = FALSE)
   sprintf("<div class='metric'><div class='mv'>%s</div><div class='ml'>%s</div></div>",
-          value, label)
+          if (isTRUE(raw)) value else .html_escape(as.character(value)), label)
 
 # Wrap a table so a wide one scrolls inside its own box instead of pushing the
 # page sideways. Used for every table the report emits.

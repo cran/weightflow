@@ -2,6 +2,16 @@
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(weightflow)
 set.seed(20260910)
+# Figures are kept as standalone .svg files and embedded as data URIs. An inline
+# <svg> element does not survive an HTML re-parse (libxml2 lowercases attribute
+# names, so `viewBox` becomes `viewbox` and the figure collapses to zero height);
+# a data URI is one attribute value and is copied verbatim.
+wf_fig <- function(file, alt = "")
+  sprintf('<img src="%s" alt="%s" style="width:100%%;max-width:960px;" />',
+          knitr::image_uri(file.path("figures", file)), alt)
+
+## ----pl-eclac, echo = FALSE, results = "asis"---------------------------------
+cat(wf_fig("pl-eclac.svg", "The ECLAC chapter XVI sequence and the recipe verb for each step"))
 
 ## ----merge--------------------------------------------------------------------
 waves <- split(panel_puro, panel_puro$wave)
@@ -30,6 +40,16 @@ lw <- weighting_spec(wide, base_weights = pw_T1) |>
   prep()
 
 lw
+
+## ----composition--------------------------------------------------------------
+grp <- function(a) cut(a, c(-Inf, 29, 49, Inf), labels = c("18-29", "30-49", "50+"))
+t1  <- waves$T1
+sh  <- function(w, g) round(100 * tapply(w, g, sum) / sum(w), 1)
+act <- lw$final_weight > 0
+
+rbind(T1_target  = sh(t1$pw, grp(t1$age)),
+      unadjusted = sh(wide$pw_T1[wide$responded_always], grp(wide$age_T1[wide$responded_always])),
+      adjusted   = sh(lw$final_weight[act], grp(wide$age_T1[act])))
 
 ## ----attrition----------------------------------------------------------------
 data.frame(through = paste0("T", 1:4),
